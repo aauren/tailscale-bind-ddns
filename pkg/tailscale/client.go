@@ -3,15 +3,16 @@ package tailscale
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
-	"github.com/tailscale/tailscale-client-go/tailscale"
 	"k8s.io/klog/v2"
+	tailscaleclient "tailscale.com/client/tailscale/v2"
 )
 
 // Client wraps the Tailscale client with additional functionality
 type Client struct {
-	client  *tailscale.Client
+	client  *tailscaleclient.Client
 	tailnet string
 }
 
@@ -34,9 +35,9 @@ func NewClient(apiKey, tailnet string) (*Client, error) {
 		return nil, fmt.Errorf("tailnet is required")
 	}
 
-	client, err := tailscale.NewClient(apiKey, tailnet)
-	if err != nil {
-		return nil, fmt.Errorf("creating Tailscale client: %w", err)
+	client := &tailscaleclient.Client{
+		Tailnet: tailnet,
+		APIKey:  apiKey,
 	}
 
 	return &Client{
@@ -58,13 +59,13 @@ func NewOAuthClient(clientID, clientSecret, tailnet string) (*Client, error) {
 	}
 
 	// Create client with OAuth credentials
-	client, err := tailscale.NewClient(
-		"",
-		tailnet,
-		tailscale.WithOAuthClientCredentials(clientID, clientSecret, []string{"devices:read"}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating OAuth Tailscale client: %w", err)
+	client := &tailscaleclient.Client{
+		Tailnet: tailnet,
+		HTTP: tailscaleclient.OAuthConfig{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			Scopes:       []string{"devices:core:read"},
+		}.HTTPClient(),
 	}
 
 	return &Client{
@@ -77,7 +78,7 @@ func NewOAuthClient(clientID, clientSecret, tailnet string) (*Client, error) {
 func (c *Client) GetMachines(ctx context.Context) ([]Machine, error) {
 	klog.V(2).Info("Fetching machines from Tailscale")
 
-	devices, err := c.client.Devices(ctx)
+	devices, err := c.client.Devices().List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching devices: %w", err)
 	}
@@ -93,7 +94,9 @@ func (c *Client) GetMachines(ctx context.Context) ([]Machine, error) {
 
 		// Extract IPv4 address from the device's IP addresses
 		for _, addr := range device.Addresses {
-			if len(addr) >= 4 && addr[0] == 100 { // Tailscale IPv4 addresses start with 100.x.x.x
+			ip := net.ParseIP(addr)
+			if ip != nil && ip.To4() != nil {
+				// This is an IPv4 address
 				machine.IPv4Address = addr
 				break
 			}
@@ -101,8 +104,9 @@ func (c *Client) GetMachines(ctx context.Context) ([]Machine, error) {
 
 		// Extract IPv6 address if available
 		for _, addr := range device.Addresses {
-			const ipv6AddrLen = 16 // IPv6 addresses are 16 bytes
-			if len(addr) >= ipv6AddrLen {
+			ip := net.ParseIP(addr)
+			if ip != nil && ip.To4() == nil {
+				// This is an IPv6 address
 				machine.IPv6Address = addr
 				break
 			}
