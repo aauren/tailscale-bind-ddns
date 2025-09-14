@@ -122,7 +122,9 @@ The application supports three configuration methods (in order of precedence):
 ```yaml
 # config.yaml
 tailscale:
-  api_key: "your-tailscale-api-key-here"
+  # OAuth credentials (recommended approach)
+  client_id: "your-oauth-client-id"
+  client_secret: "your-oauth-client-secret"
   tailnet: "your-tailnet.example.com"
   poll_interval: "30s"
 
@@ -203,56 +205,71 @@ Test the application without making actual DNS changes:
 
 ### 1. Tailscale Setup
 
-#### Option A: API Key (Recommended)
-
-1. Go to [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
-2. Generate a new API key with appropriate permissions
-3. Use the API key in your configuration
-
-#### Option B: OAuth Client
+#### Option A: OAuth Client (Recommended)
 
 1. Go to [Tailscale Admin Console](https://login.tailscale.com/admin/settings/oauth)
 2. Create a new OAuth client with `devices:read` scope
 3. Use the client ID and secret in your configuration
 
+#### Option B: API Key
+
+1. Go to [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
+2. Generate a new API key with appropriate permissions
+3. Use the API key in your configuration
+
+#### Obtain Your Tailnet Name
+
+1. Go to [Tailscale Admin Console](https://login.tailscale.com/admin/dns)
+2. Find the section that says `Tailnet Name`
+3. Fill that into the configuration
+
 ### 2. Bind DNS Setup
 
 1. **Generate TSIG Key**:
-   ```bash
-   dnssec-keygen -a HMAC-SHA256 -b 256 -n HOST tailscale-key
-   ```
 
-2. **Configure Bind** (`named.conf`):
-   ```
-   key "tailscale-key" {
-       algorithm hmac-sha256;
-       secret "your-generated-secret";
-   };
+```bash
+tsig-keygen -a HMAC-SHA256 tailscale-bind-ddns-key
+```
 
-   zone "tailscale.example.com" {
-       type master;
-       file "/var/lib/bind/tailscale.example.com";
-       allow-update { key "tailscale-key"; };
-   };
-   ```
+2. **Configure Bind** (`/etc/named.conf`):
 
-3. **Create Zone File** (`/var/lib/bind/tailscale.example.com`):
-   ```
-   $TTL 300
-   @   IN  SOA ns1.example.com. admin.example.com. (
-       2024011401  ; serial
-       3600        ; refresh
-       1800        ; retry
-       604800      ; expire
-       300         ; minimum
-   )
-   @   IN  NS  ns1.example.com.
-   ```
+```
+key "tailscale-bind-ddns-key" {
+    algorithm hmac-sha256;
+    secret "your-generated-secret";
+};
+
+zone "tailscale.example.com" {
+    type master;
+    file "tailscale.example.com.zone";
+    allow-update { key "tailscale-bind-ddns-key"; };
+};
+```
+
+3. **Create Zone File** (`/var/lib/bind/tailscale.example.com.zone`):
+
+This may be in a different location depending on the settings of your Linux package distributor or
+the `options` -> `directory` setting in your `/etc/named.conf` file.
+
+```
+$TTL 60
+@   IN  SOA ns1.example.com. admin.example.com (
+    2025091401  ; serial
+    300         ; refresh
+    60          ; retry
+    3600        ; expire
+    60          ; minimum
+)
+@   IN  NS  ns1.example.com.
+```
+
+Replace all instances of example.com with the primary name of your DNS server.
 
 4. **Restart Bind**:
-   ```bash
-   systemctl restart named
-   ```
+
+```bash
+systemctl restart named
+```
 
 ## Development
 

@@ -4,12 +4,12 @@
 
 # Tailscale configuration
 tailscale:
-  # API Key for Tailscale (recommended approach)
-  api_key: "your-tailscale-api-key-here"
+  # API Key for Tailscale (alternative to OAuth)
+  #api_key: "your-tailscale-api-key-here"
 
-  # OAuth credentials (alternative to API key)
-  # client_id: "your-oauth-client-id"
-  # client_secret: "your-oauth-client-secret"
+  # OAuth credentials (recommended approach)
+  client_id: "your-oauth-client-id"
+  client_secret: "your-oauth-client-secret"
 
   # Your Tailscale tailnet name (e.g., "example.com")
   tailnet: "your-tailnet.example.com"
@@ -29,14 +29,14 @@ bind:
   zone: "tailscale.example.com"
 
   # TSIG key configuration
-  key_name: "tailscale-key"
+  key_name: "tailscale-bind-ddns-key"
   key_secret: "your-tsig-key-secret-here"
 
   # TSIG algorithm (hmac-md5, hmac-sha1, hmac-sha256, hmac-sha384, hmac-sha512)
   algorithm: "hmac-sha256"
 
   # DNS record TTL
-  ttl: "300s"
+  ttl: "60s"
 
   # How often to send DNS updates
   update_interval: "60s"
