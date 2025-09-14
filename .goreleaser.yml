@@ -1,0 +1,60 @@
+# goreleaser configuration
+# More info: https://goreleaser.com/quick-start/
+version: 2
+
+builds:
+  - id: tailscale-bind-ddns
+    binary: tailscale-bind-ddns
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: tailscale-bind-ddns
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: '*'
+        format: tar.gz
+    files:
+      - config.yaml.example
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  github:
+    owner: aauren
+    name: tailscale-bind-ddns
+  draft: false
+  prerelease: false
+  mode: replace
+  header: |
+    ## Tailscale-Bind DDNS {{ .Tag }}
+
+    A Go application that automatically syncs Tailscale machines to Bind DNS records using RFC 2136 dynamic updates with TSIG authentication.
+
+    ### What's Changed
+  footer: |
+    **Full Changelog**: https://github.com/aauren/tailscale-bind-ddns/compare/{{ .PreviousTag }}...{{ .Tag }}

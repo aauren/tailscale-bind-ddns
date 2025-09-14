@@ -1,0 +1,16 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+For all refactor requests, please ensure the following:
+
+- Any time that you are breaking out functions into smaller functions:
+  - Try to ensure that functions are a maximum of 50 lines
+  - Prefer function sizes of approximately 30 lines or less
+  - Don't create functions for code that is less than 5 lines long
+  - Ensure that all functions created encapsulate related logic while obeying max lengths
+  - If you can't follow any of these guidelines, then please ask me for guidance rather than assuming. When asking, ask me about each item and try to be as specific as possible about the problems run into and the considerations.
+- For any hard-coded variables that you encounter during a refactor consider whether or not they should be added as a constant
+- Prioritize keeping code as DRY as possible and minimize repitition
+- If you find elements of code that are reused in the current file, refactor those as well to use the refactored functions

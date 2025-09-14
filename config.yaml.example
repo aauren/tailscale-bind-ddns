@@ -1,0 +1,50 @@
+# Tailscale-Bind DDNS Configuration
+# This file can be used to configure the application.
+# You can also use environment variables (prefixed with TSBD_) or command line flags.
+
+# Tailscale configuration
+tailscale:
+  # API Key for Tailscale (recommended approach)
+  api_key: "your-tailscale-api-key-here"
+
+  # OAuth credentials (alternative to API key)
+  # client_id: "your-oauth-client-id"
+  # client_secret: "your-oauth-client-secret"
+
+  # Your Tailscale tailnet name (e.g., "example.com")
+  tailnet: "your-tailnet.example.com"
+
+  # How often to poll Tailscale for machine updates
+  poll_interval: "30s"
+
+# Bind DNS server configuration
+bind:
+  # DNS server address
+  server: "dns.example.com"
+
+  # DNS server port (usually 53)
+  port: 53
+
+  # DNS zone to update (e.g., "tailscale.example.com")
+  zone: "tailscale.example.com"
+
+  # TSIG key configuration
+  key_name: "tailscale-key"
+  key_secret: "your-tsig-key-secret-here"
+
+  # TSIG algorithm (hmac-md5, hmac-sha1, hmac-sha256, hmac-sha384, hmac-sha512)
+  algorithm: "hmac-sha256"
+
+  # DNS record TTL
+  ttl: "300s"
+
+  # How often to send DNS updates
+  update_interval: "60s"
+
+# General application configuration
+general:
+  # Log level (debug, info, warn, error)
+  log_level: "info"
+
+  # Run in dry-run mode (don't actually update DNS)
+  dry_run: false

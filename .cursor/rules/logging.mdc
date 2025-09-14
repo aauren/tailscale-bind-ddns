@@ -1,0 +1,32 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Logging
+
+We use the `klog` package from the Kubernetes project for a simple custom logger for backend logging.
+
+## Basic Logging
+
+Import the log package and use it for simple logging:
+
+```golang
+import (
+    "k8s.io/klog/v2"
+)
+
+func main() {
+    klog.Info("Application started")
+    klog.Infof("User created: %v", userID)
+    klog.V(1).Infof("Found %d routes for interface %s, deleting them...", len(routes), iface.Attrs().Name)
+}
+```
+
+## Best Practices
+
+- Add the logger at the top of the file or as a package/global variable.
+- Do not use global context for sensitive or user-specific data.
+- Avoid logging sensitive information (e.g., passwords, tokens).
+
+## Example
