@@ -74,7 +74,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: aauren/rtorrent-exporter
+        images: aauren/tailscale-bind-ddns
 
     # Tagging a proper release, update latest
     - name: Build and push - New Tag
