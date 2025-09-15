@@ -260,7 +260,7 @@ $TTL 60
     3600        ; expire
     60          ; minimum
 )
-@   IN  NS  ns1.example.com.
+    IN  NS  ns1.example.com.
 ```
 
 Replace all instances of example.com with the primary name of your DNS server.
