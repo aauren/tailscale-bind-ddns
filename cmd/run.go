@@ -26,7 +26,7 @@ to Bind DNS records. The application will run until interrupted.`,
 		}
 
 		klog.Info("Starting Tailscale-Bind DDNS application")
-		klog.V(1).Infof("Configuration: %+v", cfg)
+		klog.V(2).Infof("Configuration: %+v", cfg)
 
 		// Create application
 		application, err := app.NewApp(cfg)

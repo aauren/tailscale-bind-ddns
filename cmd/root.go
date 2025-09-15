@@ -81,7 +81,8 @@ func initializeCommands() {
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is config.yaml)")
-	rootCmd.PersistentFlags().String("log-level", "info", "log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().String("log-level", "info",
+		"log level (debug, verbose, info) (WARNING: debug level may leak secrets)")
 
 	// Bind global flags to viper
 	bindGlobalFlagsToViper()

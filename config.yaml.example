@@ -43,7 +43,7 @@ bind:
 
 # General application configuration
 general:
-  # Log level (debug, info, warn, error)
+  # Log level (debug, verbose, info) (WARNING: debug level may leak secrets into output)
   log_level: "info"
 
   # Run in dry-run mode (don't actually update DNS)

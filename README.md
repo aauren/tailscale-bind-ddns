@@ -114,7 +114,7 @@ The application supports three configuration methods (in order of precedence):
 
 | Option | CLI Flag | Environment Variable | Description |
 |--------|----------|---------------------|-------------|
-| Log Level | `--log-level` | `TSBD_LOG_LEVEL` | Log level (debug, info, warn, error) |
+| Log Level | `--log-level` | `TSBD_LOG_LEVEL` | Log level (debug, verbose, info) (WARNING: debug level may leak secrets) |
 | Dry Run | `--dry-run` | `TSBD_DRY_RUN` | Run in dry-run mode |
 
 ### Example Configuration File
