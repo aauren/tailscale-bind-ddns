@@ -2,6 +2,7 @@ package bind
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -176,7 +177,9 @@ func TestCreateTSIGKey(t *testing.T) {
 				assert.Equal(t, client.keyName, key.Hdr.Name)
 				expectedAlgorithm := tt.algorithm
 				if expectedAlgorithm == "" {
-					expectedAlgorithm = "hmac-sha256"
+					expectedAlgorithm = "hmac-sha256."
+				} else {
+					expectedAlgorithm = fmt.Sprintf("%s.", tt.algorithm)
 				}
 				assert.Equal(t, expectedAlgorithm, key.Algorithm)
 			}

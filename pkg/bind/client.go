@@ -164,7 +164,7 @@ func (c *Client) createTSIGKey() (*dns.TSIG, error) {
 			Rrtype: dns.TypeTSIG,
 			Class:  dns.ClassANY,
 		},
-		Algorithm: algorithm,
+		Algorithm: fmt.Sprintf("%s.", algorithm),
 	}, nil
 }
 
