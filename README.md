@@ -27,8 +27,8 @@ The application consists of several key components:
 
 - Tailscale account with API access (See `Setup` section below for more details)
 - Bind DNS server (or any RFC 2136 compliant DNS server) with TSIG key configured (See `Setup` below for more details)
-- A tailscale-bind-ddns configuration file (see [config.yaml.example](./config.yaml.example) and the `Configuration` section below for more
-  details)
+- A tailscale-bind-ddns configuration file (see [config.yaml.example](./config.yaml.example) and the [Configuration](./docs/config.md)
+  docs for more details)
 
 ### Pre-built Releases (Recommended)
 
@@ -56,7 +56,7 @@ docker run -ti --rm -v $(pwd)/config.yaml:/config/config.yaml aauren/tailscale-b
 docker run -ti --rm -v $(pwd)/config.yaml:/config/config.yaml aauren/tailscale-bind-ddns:latest run --config=/config/config.yaml
 ```
 
-#### Docker Compose Example
+#### Docker Compose Example (Recommended)
 
 Download the [Docker Compose](./compose.yaml)
 
@@ -89,197 +89,15 @@ cd tailscale-bind-ddns
 go build -o tailscale-bind-ddns .
 ```
 
-## Configuration
-
-The application supports three configuration methods (in order of precedence):
-
-1. **Command Line Flags**
-2. **Environment Variables** (prefixed with `TSBD_`)
-3. **YAML Configuration File**
-
-### Configuration Options
-
-#### Tailscale Configuration
-
-| Option | CLI Flag | Environment Variable | Description |
-|--------|----------|---------------------|-------------|
-| API Key | `--tailscale-api-key` | `TSBD_TAILSCALE_API_KEY` | Tailscale API key (recommended) |
-| Client ID | `--tailscale-client-id` | `TSBD_TAILSCALE_CLIENT_ID` | OAuth client ID |
-| Client Secret | `--tailscale-client-secret` | `TSBD_TAILSCALE_CLIENT_SECRET` | OAuth client secret |
-| Tailnet | `--tailscale-tailnet` | `TSBD_TAILSCALE_TAILNET` | Your Tailscale tailnet name |
-| Poll Interval | `--tailscale-poll-interval` | `TSBD_TAILSCALE_POLL_INTERVAL` | How often to poll Tailscale (default: 30s) |
-
-#### Bind DNS Configuration
-
-| Option | CLI Flag | Environment Variable | Description |
-|--------|----------|---------------------|-------------|
-| Server | `--bind-server` | `TSBD_BIND_SERVER` | DNS server address |
-| Port | `--bind-port` | `TSBD_BIND_PORT` | DNS server port (default: 53) |
-| Zone | `--bind-zone` | `TSBD_BIND_ZONE` | DNS zone to update |
-| Key Name | `--bind-key-name` | `TSBD_BIND_KEY_NAME` | TSIG key name |
-| Key Secret | `--bind-key-secret` | `TSBD_BIND_KEY_SECRET` | TSIG key secret |
-| Algorithm | `--bind-algorithm` | `TSBD_BIND_ALGORITHM` | TSIG algorithm (default: hmac-sha256) |
-| TTL | `--bind-ttl` | `TSBD_BIND_TTL` | DNS record TTL (default: 300s) |
-| Update Interval | `--bind-update-interval` | `TSBD_BIND_UPDATE_INTERVAL` | DNS update interval (default: 60s) |
-
-#### PTR Record Configuration
-
-| Option | CLI Flag | Environment Variable | Description |
-|--------|----------|---------------------|-------------|
-| Enabled | `--ptr-enabled` | `TSBD_PTR_ENABLED` | Enable PTR record creation (default: false) |
-| IPv4 Zone | `--ptr-ipv4-zone` | `TSBD_PTR_IPV4_ZONE` | IPv4 PTR zone name (required when enabled) |
-| IPv4 Subnet | `--ptr-ipv4-subnet` | `TSBD_PTR_IPV4_SUBNET` | IPv4 subnet for PTR records (default: 100.64.0.0/10) |
-| IPv4 Subnet Size | `--ptr-ipv4-subnet-size` | `TSBD_PTR_IPV4_SUBNET_SIZE` | IPv4 subnet boundary: 8, 16, or 24 (default: 16) |
-| IPv6 Enabled | `--ptr-ipv6-enabled` | `TSBD_PTR_IPV6_ENABLED` | Enable IPv6 PTR records (default: false) |
-| IPv6 Zone | `--ptr-ipv6-zone` | `TSBD_PTR_IPV6_ZONE` | IPv6 PTR zone name (required when IPv6 enabled) |
-| IPv6 Subnet | `--ptr-ipv6-subnet` | `TSBD_PTR_IPV6_SUBNET` | IPv6 subnet for PTR records (required when IPv6 enabled) |
-| IPv6 Subnet Size | `--ptr-ipv6-subnet-size` | `TSBD_PTR_IPV6_SUBNET_SIZE` | IPv6 subnet boundary: 32, 48, or 64 (default: 64) |
-
-#### General Configuration
-
-| Option | CLI Flag | Environment Variable | Description |
-|--------|----------|---------------------|-------------|
-| Log Level | `--log-level` | `TSBD_LOG_LEVEL` | Log level (debug, verbose, info) (WARNING: debug level may leak secrets) |
-| Dry Run | `--dry-run` | `TSBD_DRY_RUN` | Run in dry-run mode |
-
-### Example Configuration File
-
-```yaml
-# config.yaml
-tailscale:
-  # OAuth credentials (recommended approach)
-  client_id: "your-oauth-client-id"
-  client_secret: "your-oauth-client-secret"
-  tailnet: "your-tailnet.example.com"
-  poll_interval: "30s"
-
-bind:
-  server: "dns.example.com"
-  port: 53
-  zone: "tailscale.example.com"
-  key_name: "tailscale-key"
-  key_secret: "your-tsig-key-secret-here"
-  algorithm: "hmac-sha256"
-  ttl: "300s"
-  update_interval: "60s"
-
-  # PTR record configuration (optional)
-  ptr:
-    enabled: true
-    ipv4_zone: "64.100.in-addr.arpa"  # Reverse DNS zone for IPv4
-    ipv4_subnet: "100.64.0.0/10"
-    ipv4_subnet_size: 16              # Subnet boundary: /8, /16, or /24 (default: 16)
-    ipv6_enabled: false               # Enable IPv6 PTR records
-    #ipv6_zone: "0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa"  # Reverse DNS zone for IPv6
-    #ipv6_subnet: "fd7a:115c:a1e0::/64"
-    #ipv6_subnet_size: 64              # Subnet boundary: /32, /48, or /64 (default: 64)
-
-general:
-  log_level: "info"
-  dry_run: false
-```
-
-## PTR Records (Reverse DNS)
-
-The application can optionally create PTR records (reverse DNS) for Tailscale machines. This allows you to perform reverse DNS lookups on Tailscale IP addresses.
-
-### How PTR Records Work
-
-PTR records map IP addresses back to hostnames. For example:
-- Forward DNS: `machine1.tailscale.example.com` → `100.64.1.1`
-- Reverse DNS: `1.1.64.100.in-addr.arpa` → `machine1.tailscale.example.com`
-
-### Dynamic Zone Generation
-
-The application can automatically generates PTR zones based on configurable subnet boundaries. This allows you to organize PTR records into appropriate zones without manual configuration.
-
-**NOTE:** Creating the Bind configuration for a subnet as large as a `100.64.0.0/10` is complex and beyond
-the scope of this help guide. If you are new to bind, I would recommend that you make your subnet smaller
-rather than deal with it. Most people should be fine with a `/24`.
-
-#### IPv4 Subnet Boundaries
-
-For IPv4 addresses, you can configure subnet boundaries of `/8`, `/16`, or `/24`:
-
-- **/8**: Creates zones like `100.in-addr.arpa` (one zone per Class A network)
-- **/16**: Creates zones like `64.100.in-addr.arpa` (one zone per Class B network) - **Default**
-- **/24**: Creates zones like `1.64.100.in-addr.arpa` (one zone per Class C network)
-
-**Example with /16 boundaries:**
-- `100.64.1.1` → Zone: `64.100.in-addr.arpa`
-- `100.65.1.1` → Zone: `65.100.in-addr.arpa`
-- `100.66.1.1` → Zone: `66.100.in-addr.arpa`
-
-#### IPv6 Subnet Boundaries
-
-For IPv6 addresses, you can configure subnet boundaries of `/32`, `/48`, or `/64`:
-
-- **/32**: Creates zones with 8 nibbles (e.g., `8.b.d.0.1.0.0.2.ip6.arpa`)
-- **/48**: Creates zones with 12 nibbles (e.g., `0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa`)
-- **/64**: Creates zones with 16 nibbles (e.g., `0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa`) - **Default**
-
-### Configuration
-
-To enable PTR records, configure the `ptr` section in your config file:
-
-```yaml
-bind:
-  ptr:
-    enabled: true
-
-    # IPv4 Configuration
-    ipv4_zone: "64.100.in-addr.arpa"  # Base IPv4 reverse DNS zone (used for validation)
-    ipv4_subnet: "100.64.0.0/10"      # Only create PTR records for IPs in this subnet
-    ipv4_subnet_size: 16              # Subnet boundary: /8, /16, or /24 (default: 16)
-
-    # IPv6 Configuration
-    ipv6_enabled: false               # Enable IPv6 PTR records
-    ipv6_zone: "0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa"  # Base IPv6 reverse DNS zone
-    ipv6_subnet: "fd7a:115c:a1e0::/64"  # IPv6 subnet for PTR records
-    ipv6_subnet_size: 64              # Subnet boundary: /32, /48, or /64 (default: 64)
-```
-
-### Subnet Validation
-
-The application validates that each machine's IP address falls within the configured subnet before creating PTR records:
-
-- **IPv4**: Only machines with IPs in `ipv4_subnet` will get PTR records
-- **IPv6**: Only machines with IPs in `ipv6_subnet` will get PTR records (if enabled)
-- **Out-of-subnet IPs**: Will be logged as warnings and skipped
-
-### Zone Management
-
-The application automatically groups PTR records by their calculated zones and sends separate DNS update messages for each zone. This ensures proper DNS organization and allows Bind to handle each zone independently.
-
-**Example zone distribution for 100.64.0.0/10 with /16 boundaries:**
-- Zone `64.100.in-addr.arpa`: Contains PTR records for 100.64.x.x addresses
-- Zone `65.100.in-addr.arpa`: Contains PTR records for 100.65.x.x addresses
-- Zone `66.100.in-addr.arpa`: Contains PTR records for 100.66.x.x addresses
-- And so on...
-
-### IPv6 PTR Records
-
-For IPv6 PTR records, you need to:
-
-1. Enable IPv6 PTR records in configuration
-2. Configure the appropriate IPv6 reverse DNS zone
-3. Ensure your Bind server supports IPv6
-
-Example IPv6 configuration:
-```yaml
-bind:
-  ptr:
-    enabled: true
-    ipv4_zone: "64.100.in-addr.arpa"  # IPv4 reverse zone
-    ipv4_subnet: "100.64.0.0/10"
-    ipv4_subnet_size: 16
-    ipv6_enabled: true
-    ipv6_zone: "0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa"  # IPv6 reverse zone for fd7a:115c:a1e0::/64
-    ipv6_subnet: "fd7a:115c:a1e0::/64"
-    ipv6_subnet_size: 64
-```
-
 ## Usage
+
+While you can use environment variables or CLI parameters to configure tailscale-bind-ddns, the project recommends that you use a
+configuration file as most users will find it simpler.
+
+For more details see:
+
+* [config.yaml.example](./config.yaml.example) - An example configuration file with all options in it
+* [Configuration Documentation](./docs/config.md) - Docs with in-depth information about configuration specification
 
 ### Basic Usage
 
@@ -431,162 +249,9 @@ $TTL 300
 systemctl restart named
 ```
 
-## Development
-
-### Project Structure
-
-```
-.
-├── .github/                 # GitHub Actions workflows
-│   └── workflows/
-│       ├── ci.yml          # Continuous Integration
-│       └── release.yml     # Automated releases
-├── cmd/                     # CLI commands and main entry point
-│   └── root.go
-├── pkg/                     # Public library code
-│   ├── app/                # Main application logic
-│   ├── bind/               # Bind DDNS client
-│   ├── config/             # Configuration management
-│   └── tailscale/          # Tailscale client
-├── internal/               # Internal packages (not used yet)
-├── test/                   # Test utilities
-├── docs/                   # Documentation
-├── .goreleaser.yml         # GoReleaser configuration
-├── Makefile               # Build automation
-├── main.go                # Application entry point
-├── config.yaml.example    # Example configuration
-└── go.mod                 # Go module definition
-```
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/aauren/tailscale-bind-ddns.git
-cd tailscale-bind-ddns
-
-# Install development tools
-make install-tools
-
-# Download dependencies
-make deps
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-make test
-
-# Run tests with coverage
-make test-coverage
-
-# Generate HTML coverage report
-make coverage
-```
-
-### Building
-
-```bash
-# Build for current platform
-make build
-
-# Build for all platforms
-make build-all
-
-# Clean build artifacts
-make clean
-```
-
-### Linting
-
-```bash
-# Run linter
-make lint
-
-# Run linter with auto-fix
-make lint-fix
-```
-
-### Creating Releases
-
-```bash
-# Create a snapshot release (for testing)
-make snapshot
-
-# Create a full release (requires git tag)
-make release
-
-# Test release locally without publishing
-make release-local
-```
-
-## Automated Releases
-
-This project uses [GoReleaser](https://goreleaser.com/) for automated releases and [GitHub Actions](https://github.com/features/actions) for CI/CD.
-
-### Release Process
-
-1. **Tag a release**: Create a git tag (e.g., `v1.0.0`)
-2. **Push the tag**: `git push origin v1.0.0`
-3. **Automated build**: GitHub Actions automatically builds binaries for multiple platforms
-4. **Release creation**: GoReleaser creates a GitHub release with:
-   - Pre-built binaries for Linux (amd64, arm64), macOS (amd64, arm64), and Windows (amd64)
-   - Checksums for verification
-   - Release notes with changelog
-
-### Supported Platforms
-
-- **Linux**: amd64, arm64
-- **macOS**: amd64, arm64
-- **Windows**: amd64
-
-### CI/CD Pipeline
-
-The project includes two GitHub Actions workflows:
-
-- **CI** (`.github/workflows/ci.yml`): Runs on every push and PR
-  - Tests on multiple Go versions (1.24, 1.25)
-  - Runs linter (golangci-lint)
-  - Generates test coverage reports
-  - Tests GoReleaser build process
-
-- **Release** (`.github/workflows/release.yml`): Runs on tag pushes
-  - Builds binaries for all supported platforms
-  - Creates GitHub release with assets
-  - Generates checksums for verification
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass (`make ci`)
-6. Submit a pull request
-
-### Development Workflow
-
-```bash
-# Set up development environment
-make install-tools
-make deps
-
-# Make your changes...
-
-# Run tests and linting
-make ci
-
-# Test the build
-make build
-
-# Create a snapshot release to test
-make snapshot
-```
-
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the Apache 2.0 - see the LICENSE file for details.
 
 ## Troubleshooting
 
