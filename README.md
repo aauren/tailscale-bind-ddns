@@ -25,33 +25,57 @@ The application consists of several key components:
 
 ### Prerequisites
 
-- Tailscale account with API access
-- Bind DNS server with TSIG key configured
+- Tailscale account with API access (See `Setup` section below for more details)
+- Bind DNS server (or any RFC 2136 compliant DNS server) with TSIG key configured (See `Setup` below for more details)
+- A tailscale-bind-ddns configuration file (see [config.yaml.example](./config.yaml.example) and the `Configuration` section below for more
+  details)
 
 ### Pre-built Releases (Recommended)
 
-Download the latest release from [GitHub Releases](https://github.com/aauren/tailscale-bind-ddns/releases):
+Download the latest release from [GitHub Releases](https://github.com/aauren/tailscale-bind-ddns/releases)
 
 ```bash
-# Download and extract the latest release
-wget https://github.com/aauren/tailscale-bind-ddns/releases/latest/download/tailscale-bind-ddns_*_linux_amd64.tar.gz
-tar -xzf tailscale-bind-ddns_*_linux_amd64.tar.gz
-sudo mv tailscale-bind-ddns /usr/local/bin/
+# Ensure that you have a working configuration & connectivity to DNS and Tailscale first
+./tailscale-bind-ddns --config=config.yaml test
+
+# If everything above succeeds, then you can continue with:
+./tailscale-bind-ddns --config=config.yaml run
+```
+
+### Container
+
+You can get the latest container release at: [aauren/tailscale-bind-ddns](https://hub.docker.com/repository/docker/aauren/tailscale-bind-ddns/general)
+
+#### Docker Run Example
+
+```bash
+# Ensure that you have a working configuration & connectivity to DNS and Tailscale first
+docker run -ti --rm -v $(pwd)/config.yaml:/config/config.yaml aauren/tailscale-bind-ddns:latest test --config=/config/config.yaml
+
+# If everything above succeeds, then you can continue with:
+docker run -ti --rm -v $(pwd)/config.yaml:/config/config.yaml aauren/tailscale-bind-ddns:latest run --config=/config/config.yaml
+```
+
+#### Docker Compose Example
+
+Download the [Docker Compose](./compose.yaml)
+
+```bash
+docker compose up -d
 ```
 
 ### Build from Source
 
 #### Using Make (Recommended)
 
+For this set of instructions you must have [Docker](https://www.docker.com/) installed.
+
 ```bash
 git clone https://github.com/aauren/tailscale-bind-ddns.git
 cd tailscale-bind-ddns
 
-# Install development tools
-make install-tools
-
 # Build for current platform
-make build
+make tailscale-bind-ddns
 
 # Or build for all platforms
 make build-all
@@ -63,19 +87,6 @@ make build-all
 git clone https://github.com/aauren/tailscale-bind-ddns.git
 cd tailscale-bind-ddns
 go build -o tailscale-bind-ddns .
-```
-
-#### Using GoReleaser
-
-```bash
-# Install goreleaser
-go install github.com/goreleaser/goreleaser@latest
-
-# Build snapshot release
-goreleaser release --snapshot --rm-dist
-
-# Or build full release (requires git tag)
-goreleaser release --rm-dist
 ```
 
 ## Configuration
