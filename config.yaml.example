@@ -25,8 +25,8 @@ bind:
   # DNS server port (usually 53)
   port: 53
 
-  # DNS zone to update (e.g., "tailscale.example.com")
-  zone: "tailscale.example.com"
+  # DNS zone to update (e.g., "tailscale.example.com.")
+  zone: "tailscale.example.com."
 
   # TSIG key configuration
   key_name: "tailscale-bind-ddns-key"
@@ -40,6 +40,38 @@ bind:
 
   # How often to send DNS updates
   update_interval: "60s"
+
+  # PTR record (Reverse DNS) configuration (optional)
+  ptr:
+    # Enable PTR record creation
+    enabled: false
+
+    # IPv4 PTR zone name (e.g., "64.100.in-addr.arpa" for 100.64.0.0/10)
+    ipv4_zone: "64.100.in-addr.arpa"
+
+    # IPv4 subnet for PTR records (default: 100.64.0.0/10)
+    ipv4_subnet: "100.64.0.0/10"
+
+    # IPv4 subnet size for PTR zones (8, 16, or 24)
+    # /8: Creates zones like 100.in-addr.arpa
+    # /16: Creates zones like 64.100.in-addr.arpa (default)
+    # /24: Creates zones like 0.64.100.in-addr.arpa
+    ipv4_subnet_size: 16
+
+    # Enable IPv6 PTR records
+    ipv6_enabled: false
+
+    # IPv6 PTR zone name (e.g., "0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa" for fd7a:115c:a1e0::/64)
+    ipv6_zone: "0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa"
+
+    # IPv6 subnet for PTR records (required when ipv6_enabled is true)
+    # ipv6_subnet: "fd7a:115c:a1e0::/64"
+
+    # IPv6 subnet size for PTR zones (32, 48, or 64)
+    # /32: Creates zones with 8 nibbles
+    # /48: Creates zones with 12 nibbles
+    # /64: Creates zones with 16 nibbles (default)
+    #ipv6_subnet_size: 64
 
 # General application configuration
 general:

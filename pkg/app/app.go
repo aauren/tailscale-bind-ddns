@@ -47,6 +47,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.Bind.KeySecret,
 		cfg.Bind.Algorithm,
 		cfg.Bind.TTL,
+		&cfg.Bind.PTR,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating bind client: %w", err)
@@ -119,9 +120,14 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 			}
 
 			records := a.machinesToRecords(machines)
-			if len(records) > 0 {
+			ptrRecords := a.createPTRRecords(machines)
+
+			// Combine A/AAAA and PTR records
+			allRecords := append(records, ptrRecords...)
+
+			if len(allRecords) > 0 {
 				select {
-				case a.recordChan <- records:
+				case a.recordChan <- allRecords:
 				case <-ctx.Done():
 					return
 				}
@@ -139,8 +145,8 @@ func (a *App) machinesToRecords(machines []tailscale.Machine) []bind.DNSRecord {
 	var records []bind.DNSRecord
 
 	for _, machine := range machines {
-		// Only create records for online machines with IPv4 addresses
-		if !machine.Online || machine.IPv4Address == "" {
+		// Only create records for online machines
+		if !machine.Online {
 			continue
 		}
 
@@ -153,19 +159,87 @@ func (a *App) machinesToRecords(machines []tailscale.Machine) []bind.DNSRecord {
 		// Sanitize record name for DNS (replace invalid characters)
 		recordName = sanitizeDNSName(recordName)
 
-		record := bind.DNSRecord{
-			Name:  recordName,
-			Value: machine.IPv4Address,
-			TTL:   uint32(a.config.Bind.TTL.Seconds()),
+		// Create A record for IPv4 address
+		if machine.IPv4Address != "" {
+			aRecord := bind.DNSRecord{
+				Name:  recordName,
+				Value: machine.IPv4Address,
+				TTL:   uint32(a.config.Bind.TTL.Seconds()),
+				Type:  "A",
+			}
+			records = append(records, aRecord)
+			klog.V(2).Infof("Converted machine %s (%s) to A record %s -> %s",
+				machine.Name, machine.ID, recordName, machine.IPv4Address)
 		}
 
-		records = append(records, record)
-		klog.V(2).Infof("Converted machine %s (%s) to DNS record %s -> %s",
-			machine.Name, machine.ID, recordName, machine.IPv4Address)
+		// Create AAAA record for IPv6 address if available
+		if machine.IPv6Address != "" {
+			aaaaRecord := bind.DNSRecord{
+				Name:  recordName,
+				Value: machine.IPv6Address,
+				TTL:   uint32(a.config.Bind.TTL.Seconds()),
+				Type:  "AAAA",
+			}
+			records = append(records, aaaaRecord)
+			klog.V(2).Infof("Converted machine %s (%s) to AAAA record %s -> %s",
+				machine.Name, machine.ID, recordName, machine.IPv6Address)
+		}
 	}
 
 	klog.V(1).Infof("Converted %d machines to %d DNS records", len(machines), len(records))
 	return records
+}
+
+// createPTRRecords creates PTR records for the given machines
+func (a *App) createPTRRecords(machines []tailscale.Machine) []bind.DNSRecord {
+	var ptrRecords []bind.DNSRecord
+
+	if !a.config.Bind.PTR.Enabled {
+		return ptrRecords
+	}
+
+	for _, machine := range machines {
+		// Only create PTR records for online machines
+		if !machine.Online {
+			continue
+		}
+
+		// Use machine name as DNS record name
+		recordName := machine.Name
+		if recordName == "" {
+			recordName = machine.ID
+		}
+
+		// Sanitize record name for DNS (replace invalid characters)
+		recordName = sanitizeDNSName(recordName)
+
+		// Create PTR record for IPv4 address
+		if machine.IPv4Address != "" {
+			ptrRecord, err := a.bindClient.CreatePTRRecord(machine.IPv4Address, recordName+"."+a.config.Bind.Zone)
+			if err != nil {
+				klog.Warningf("Failed to create PTR record for IPv4 %s: %v", machine.IPv4Address, err)
+				continue
+			}
+			if ptrRecord != nil {
+				ptrRecords = append(ptrRecords, *ptrRecord)
+			}
+		}
+
+		// Create PTR record for IPv6 address if available
+		if machine.IPv6Address != "" {
+			ptrRecord, err := a.bindClient.CreatePTRRecord(machine.IPv6Address, recordName+"."+a.config.Bind.Zone)
+			if err != nil {
+				klog.Warningf("Failed to create PTR record for IPv6 %s: %v", machine.IPv6Address, err)
+				continue
+			}
+			if ptrRecord != nil {
+				ptrRecords = append(ptrRecords, *ptrRecord)
+			}
+		}
+	}
+
+	klog.V(1).Infof("Created %d PTR records", len(ptrRecords))
+	return ptrRecords
 }
 
 // GetStatus returns the current status of the application

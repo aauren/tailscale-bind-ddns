@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/spf13/viper"
@@ -37,6 +38,21 @@ type BindConfig struct {
 	Algorithm      string        `mapstructure:"algorithm"`
 	TTL            time.Duration `mapstructure:"ttl"`
 	UpdateInterval time.Duration `mapstructure:"update_interval"`
+
+	// PTR record configuration
+	PTR PTRConfig `mapstructure:"ptr"`
+}
+
+// PTRConfig holds PTR record configuration
+type PTRConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	IPv4Zone       string `mapstructure:"ipv4_zone"`
+	IPv4Subnet     string `mapstructure:"ipv4_subnet"`
+	IPv4SubnetSize int    `mapstructure:"ipv4_subnet_size"` // /8, /16, or /24
+	IPv6Enabled    bool   `mapstructure:"ipv6_enabled"`
+	IPv6Zone       string `mapstructure:"ipv6_zone"`
+	IPv6Subnet     string `mapstructure:"ipv6_subnet"`
+	IPv6SubnetSize int    `mapstructure:"ipv6_subnet_size"` // /32, /48, or /64
 }
 
 // GeneralConfig holds general application configuration
@@ -93,6 +109,13 @@ func setDefaults() {
 	viper.SetDefault("bind.update_interval", "60s")
 	viper.SetDefault("general.log_level", "info")
 	viper.SetDefault("general.dry_run", false)
+
+	// PTR record defaults
+	viper.SetDefault("bind.ptr.enabled", false)
+	viper.SetDefault("bind.ptr.ipv4_subnet", "100.64.0.0/10")
+	viper.SetDefault("bind.ptr.ipv4_subnet_size", 16) // Default to /16 for IPv4
+	viper.SetDefault("bind.ptr.ipv6_enabled", false)
+	viper.SetDefault("bind.ptr.ipv6_subnet_size", 64) // Default to /64 for IPv6
 }
 
 // bindEnvVars binds environment variables to configuration keys
@@ -140,6 +163,32 @@ func bindEnvVars() {
 		klog.Errorf("Failed to bind TSBD_BIND_UPDATE_INTERVAL: %v", err)
 	}
 
+	// PTR configuration
+	if err := viper.BindEnv("bind.ptr.enabled", "TSBD_PTR_ENABLED"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_ENABLED: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv4_zone", "TSBD_PTR_IPV4_ZONE"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV4_ZONE: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv4_subnet", "TSBD_PTR_IPV4_SUBNET"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV4_SUBNET: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv4_subnet_size", "TSBD_PTR_IPV4_SUBNET_SIZE"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV4_SUBNET_SIZE: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv6_enabled", "TSBD_PTR_IPV6_ENABLED"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV6_ENABLED: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv6_zone", "TSBD_PTR_IPV6_ZONE"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV6_ZONE: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv6_subnet", "TSBD_PTR_IPV6_SUBNET"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV6_SUBNET: %v", err)
+	}
+	if err := viper.BindEnv("bind.ptr.ipv6_subnet_size", "TSBD_PTR_IPV6_SUBNET_SIZE"); err != nil {
+		klog.Errorf("Failed to bind TSBD_PTR_IPV6_SUBNET_SIZE: %v", err)
+	}
+
 	// General configuration
 	if err := viper.BindEnv("general.log_level", "TSBD_LOG_LEVEL"); err != nil {
 		klog.Errorf("Failed to bind TSBD_LOG_LEVEL: %v", err)
@@ -177,6 +226,40 @@ func (c *Config) Validate() error {
 
 	if c.Bind.KeySecret == "" {
 		return fmt.Errorf("bind key_secret must be provided")
+	}
+
+	// Validate PTR configuration if enabled
+	if c.Bind.PTR.Enabled {
+		// Validate IPv4 configuration
+		if c.Bind.PTR.IPv4Zone == "" {
+			return fmt.Errorf("IPv4 PTR zone must be provided when PTR records are enabled")
+		}
+		if c.Bind.PTR.IPv4Subnet != "" {
+			if _, _, err := net.ParseCIDR(c.Bind.PTR.IPv4Subnet); err != nil {
+				return fmt.Errorf("invalid IPv4 subnet format: %w", err)
+			}
+		}
+		// Validate IPv4 subnet size
+		if c.Bind.PTR.IPv4SubnetSize != 8 && c.Bind.PTR.IPv4SubnetSize != 16 && c.Bind.PTR.IPv4SubnetSize != 24 {
+			return fmt.Errorf("IPv4 subnet size must be 8, 16, or 24")
+		}
+
+		// Validate IPv6 configuration if IPv6 is enabled
+		if c.Bind.PTR.IPv6Enabled {
+			if c.Bind.PTR.IPv6Zone == "" {
+				return fmt.Errorf("IPv6 PTR zone must be provided when IPv6 PTR records are enabled")
+			}
+			if c.Bind.PTR.IPv6Subnet == "" {
+				return fmt.Errorf("IPv6 subnet must be provided when IPv6 PTR records are enabled")
+			}
+			if _, _, err := net.ParseCIDR(c.Bind.PTR.IPv6Subnet); err != nil {
+				return fmt.Errorf("invalid IPv6 subnet format: %w", err)
+			}
+			// Validate IPv6 subnet size
+			if c.Bind.PTR.IPv6SubnetSize != 32 && c.Bind.PTR.IPv6SubnetSize != 48 && c.Bind.PTR.IPv6SubnetSize != 64 {
+				return fmt.Errorf("IPv6 subnet size must be 32, 48, or 64")
+			}
+		}
 	}
 
 	return nil

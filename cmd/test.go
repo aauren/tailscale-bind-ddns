@@ -57,6 +57,7 @@ to verify configuration is correct.`,
 			cfg.Bind.KeySecret,
 			cfg.Bind.Algorithm,
 			cfg.Bind.TTL,
+			&cfg.Bind.PTR,
 		)
 		if err != nil {
 			return fmt.Errorf("creating Bind client: %w", err)
