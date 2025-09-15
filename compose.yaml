@@ -1,0 +1,15 @@
+---
+services:
+  tailscale-bind-ddns:
+    image: aauren/tailscale-bind-ddns:latest
+    container_name: tailscale-bind-ddns
+    volumes:
+      - /<path_to_config_directory>:/config
+    # In the future we'll add Prometheus metrics support
+    #ports:
+    #  - 9235:9235
+    restart: unless-stopped
+    command:
+      - "--config"
+      - "/config/config.yaml"
+      - "run"
