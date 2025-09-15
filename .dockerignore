@@ -59,6 +59,24 @@ config.yml
 secrets.yaml
 secrets.yml
 
+# Docker
+.dockerignore
+
 # Backup files
 *.bak
 *.backup
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+docs/
+
+# License
+LICENSE
+
+# Test files
+test/
+*_test.go
