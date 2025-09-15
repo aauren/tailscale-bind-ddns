@@ -16,6 +16,9 @@ on:
     - v[1-9].*
     - prep-v[1-9].*
 
+permissions:
+  contents: write
+
 env:
   BUILDTIME_BASE: "golang:1.25.1"
   RUNTIME_BASE: "gcr.io/distroless/static"
