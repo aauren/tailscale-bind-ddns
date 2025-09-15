@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -53,22 +54,34 @@ Example usage:
 
 // setupLogging configures the logging based on the configuration
 func setupLogging() error {
-	// Set log level based on configuration
+	// Create a custom flagset for klog
+	flagset := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(flagset)
+
+	// Set verbosity level based on configuration
+	var verbosity int
 	switch cfg.General.LogLevel {
 	case "debug":
-		klog.InitFlags(nil)
-		// Set verbosity to 2 for debug level
-		klog.V(2).Info("Debug logging enabled")
+		verbosity = 2
+	case "verbose":
+		verbosity = 1
 	case "info":
-		klog.InitFlags(nil)
-	case "warn":
-		klog.InitFlags(nil)
-	case "error":
-		klog.InitFlags(nil)
+		verbosity = 0
 	default:
 		return fmt.Errorf("invalid log level: %s", cfg.General.LogLevel)
 	}
 
+	// Set the verbosity flag in the flagset
+	if err := flagset.Set("v", fmt.Sprintf("%d", verbosity)); err != nil {
+		return fmt.Errorf("setting klog verbosity: %w", err)
+	}
+
+	// Parse the flagset to apply the settings
+	if err := flagset.Parse([]string{}); err != nil {
+		return fmt.Errorf("parsing klog flags: %w", err)
+	}
+
+	klog.V(1).Infof("Logging configured with level: %s (verbosity: %d)", cfg.General.LogLevel, verbosity)
 	return nil
 }
 
