@@ -2,6 +2,27 @@
 
 A Go application that automatically syncs Tailscale machines to Bind DNS records using RFC 2136 dynamic updates with TSIG authentication.
 
+## Why???
+
+### Subnet Router Usecase
+
+While best practice states that every endpoint in your Tailnet should be connected directly via the Tailscale client, not every device can
+be connected that way. Some people may also just want to use the [Subnet Router](https://tailscale.com/kb/1019/subnets) configuration for
+other reasons.
+
+In the event that you do this, you will no longer get the benfit of the Tailscale client automagically resolving your devices via
+Tailscale DNS.
+
+If the network where you run the subnet router has an RFC 2136 compliant DNS server on it though, you can use this application to
+resolve the names of the tailnet devices to their tailnet IPs the same as if you were running the client directly.
+
+### Reverse DNS Usecase
+
+Sometimes when logging information all you have is an IP address. However, via reverse DNS it is possible to look up an endpoint's name
+from its IP address. This gives you a much more helpful understanding of the devices on your network than an IP address would.
+
+If you run this application with [PTR](./docs/ptr.md) (Reverse DNS) enabled you'll get exactly such functionality.
+
 ## Features
 
 - **Tailscale Integration**: Connects to Tailscale using OAuth or API key authentication
