@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/aauren/tailscale-bind-ddns/pkg/bind"
@@ -148,6 +150,9 @@ func (a *App) machinesToRecords(machines []tailscale.Machine) []bind.DNSRecord {
 			recordName = machine.ID
 		}
 
+		// Sanitize record name for DNS (replace invalid characters)
+		recordName = sanitizeDNSName(recordName)
+
 		record := bind.DNSRecord{
 			Name:  recordName,
 			Value: machine.IPv4Address,
@@ -172,4 +177,32 @@ func (a *App) GetStatus() map[string]interface{} {
 		"dry_run":           a.config.General.DryRun,
 		"log_level":         a.config.General.LogLevel,
 	}
+}
+
+// sanitizeDNSName sanitizes a string to be a valid DNS record name
+func sanitizeDNSName(name string) string {
+	// Extract only the hostname (leftmost part) from FQDN
+	// Split by dots and take only the first part
+	parts := strings.Split(name, ".")
+	hostname := parts[0]
+
+	// Replace invalid DNS characters with hyphens
+	// DNS names can only contain letters, digits, hyphens, and dots
+	reg := regexp.MustCompile(`[^a-zA-Z0-9.-]`)
+	sanitized := reg.ReplaceAllString(hostname, "-")
+
+	// Remove multiple consecutive hyphens
+	reg = regexp.MustCompile(`-+`)
+	sanitized = reg.ReplaceAllString(sanitized, "-")
+
+	// Remove leading/trailing hyphens and dots
+	sanitized = strings.Trim(sanitized, "-.")
+
+	// Ensure it's not empty
+	if sanitized == "" {
+		sanitized = "machine"
+	}
+
+	// Convert to lowercase for consistency
+	return strings.ToLower(sanitized)
 }
