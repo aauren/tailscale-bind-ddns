@@ -85,11 +85,13 @@ func (c *Client) UpdateRecords(ctx context.Context, records []DNSRecord, dryRun 
 
 	// Create dynamic update message
 	msg := new(dns.Msg)
-	msg.SetUpdate(c.zone + ".")
+	msg.SetUpdate(dns.Fqdn(c.zone))
 
 	// Add records to the update message
+	klog.V(2).Infof("Adding %d records to the update message", len(records))
 	for _, record := range records {
 		// Remove any existing A record for this name
+		klog.V(1).Infof("Removing A record for %s.%s", record.Name, c.zone)
 		rrset := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   dns.Fqdn(record.Name + "." + c.zone),
@@ -101,6 +103,7 @@ func (c *Client) UpdateRecords(ctx context.Context, records []DNSRecord, dryRun 
 		msg.RemoveRRset([]dns.RR{rrset})
 
 		// Add new A record
+		klog.V(1).Infof("Adding A record for %s.%s -> %s (TTL: %d)", record.Name, c.zone, record.Value, record.TTL)
 		aRecord := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   dns.Fqdn(record.Name + "." + c.zone),
@@ -116,6 +119,12 @@ func (c *Client) UpdateRecords(ctx context.Context, records []DNSRecord, dryRun 
 	// Sign the message with TSIG (300 seconds timeout)
 	const tsigTimeout = 300
 	msg.SetTsig(key.Hdr.Name, key.Algorithm, tsigTimeout, time.Now().Unix())
+
+	klog.V(2).Infof("Sending DNS update message: %s", msg.String())
+	klog.V(2).Infof("Message Question Section: %v", msg.Question)
+	klog.V(2).Infof("Message NS Section: %s", msg.Ns)
+	klog.V(2).Infof("Message Header Section: %s", &msg.MsgHdr)
+	klog.V(2).Infof("Message Additional Section: %s", msg.Extra)
 
 	// Send the update
 	client := new(dns.Client)
