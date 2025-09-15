@@ -123,7 +123,9 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 			ptrRecords := a.createPTRRecords(machines)
 
 			// Combine A/AAAA and PTR records
-			allRecords := append(records, ptrRecords...)
+			allRecords := make([]bind.DNSRecord, 0, len(records)+len(ptrRecords))
+			allRecords = append(allRecords, records...)
+			allRecords = append(allRecords, ptrRecords...)
 
 			if len(allRecords) > 0 {
 				select {

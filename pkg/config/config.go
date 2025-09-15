@@ -11,6 +11,10 @@ import (
 
 const (
 	dnsStandardPort = 53 // DNS standard port
+
+	// Default subnet sizes
+	defaultIPv4SubnetSize = 16 // Default to /16 for IPv4
+	defaultIPv6SubnetSize = 64 // Default to /64 for IPv6
 )
 
 type Config struct {
@@ -113,9 +117,9 @@ func setDefaults() {
 	// PTR record defaults
 	viper.SetDefault("bind.ptr.enabled", false)
 	viper.SetDefault("bind.ptr.ipv4_subnet", "100.64.0.0/10")
-	viper.SetDefault("bind.ptr.ipv4_subnet_size", 16) // Default to /16 for IPv4
+	viper.SetDefault("bind.ptr.ipv4_subnet_size", defaultIPv4SubnetSize) // Default to /16 for IPv4
 	viper.SetDefault("bind.ptr.ipv6_enabled", false)
-	viper.SetDefault("bind.ptr.ipv6_subnet_size", 64) // Default to /64 for IPv6
+	viper.SetDefault("bind.ptr.ipv6_subnet_size", defaultIPv6SubnetSize) // Default to /64 for IPv6
 }
 
 // bindEnvVars binds environment variables to configuration keys

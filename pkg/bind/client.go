@@ -12,6 +12,27 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// IPv4 subnet size constants
+const (
+	IPv4Subnet8  = 8  // /8 subnet
+	IPv4Subnet16 = 16 // /16 subnet
+	IPv4Subnet24 = 24 // /24 subnet
+)
+
+// IPv6 subnet size constants
+const (
+	IPv6Subnet32 = 32 // /32 subnet
+	IPv6Subnet48 = 48 // /48 subnet
+	IPv6Subnet64 = 64 // /64 subnet
+)
+
+// IPv6 nibble constants
+const (
+	IPv6NibbleMaskLow  = 0x0f // Low nibble mask
+	IPv6NibbleMaskHigh = 0xf0 // High nibble mask
+	IPv6NibbleShift    = 4    // Nibble shift amount
+)
+
 // Client represents a Bind DDNS client
 type Client struct {
 	server    string
@@ -360,23 +381,6 @@ func isIPInSubnet(ipStr, subnetStr string) bool {
 	return network.Contains(ip)
 }
 
-// getPTRZoneForIP determines the correct PTR zone for an IP address based on subnet size
-func (c *Client) getPTRZoneForIP(ipStr string, isIPv6 bool) (string, error) {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return "", fmt.Errorf("invalid IP address: %s", ipStr)
-	}
-
-	if isIPv6 {
-		if !c.ptrConfig.IPv6Enabled {
-			return "", fmt.Errorf("IPv6 PTR records not enabled")
-		}
-		return c.generateIPv6PTRZone(ipStr, c.ptrConfig.IPv6SubnetSize)
-	} else {
-		return c.generateIPv4PTRZone(ipStr, c.ptrConfig.IPv4SubnetSize)
-	}
-}
-
 // generateIPv4PTRZone generates the PTR zone name for IPv4 based on subnet size
 func (c *Client) generateIPv4PTRZone(ipStr string, subnetSize int) (string, error) {
 	ip := net.ParseIP(ipStr)
@@ -387,13 +391,13 @@ func (c *Client) generateIPv4PTRZone(ipStr string, subnetSize int) (string, erro
 	ipv4 := ip.To4()
 
 	switch subnetSize {
-	case 8:
+	case IPv4Subnet8:
 		// /8: Use first octet (e.g., 100.64.0.1 -> 100.in-addr.arpa)
 		return fmt.Sprintf("%d.in-addr.arpa", ipv4[0]), nil
-	case 16:
+	case IPv4Subnet16:
 		// /16: Use first two octets (e.g., 100.64.0.1 -> 64.100.in-addr.arpa)
 		return fmt.Sprintf("%d.%d.in-addr.arpa", ipv4[1], ipv4[0]), nil
-	case 24:
+	case IPv4Subnet24:
 		// /24: Use first three octets (e.g., 100.64.0.1 -> 0.64.100.in-addr.arpa)
 		return fmt.Sprintf("%d.%d.%d.in-addr.arpa", ipv4[2], ipv4[1], ipv4[0]), nil
 	default:
@@ -420,11 +424,11 @@ func (c *Client) generateIPv6PTRZone(ipStr string, subnetSize int) (string, erro
 	// Calculate how many nibbles to use based on subnet size
 	var nibblesToUse int
 	switch subnetSize {
-	case 32:
+	case IPv6Subnet32:
 		nibblesToUse = 8 // /32 = 8 nibbles
-	case 48:
+	case IPv6Subnet48:
 		nibblesToUse = 12 // /48 = 12 nibbles
-	case 64:
+	case IPv6Subnet64:
 		nibblesToUse = 16 // /64 = 16 nibbles
 	default:
 		return "", fmt.Errorf("unsupported IPv6 subnet size: %d", subnetSize)
@@ -460,13 +464,13 @@ func (c *Client) extractIPv4ZoneFromPTRName(ptrName string) string {
 
 	// Generate zone based on subnet size
 	switch c.ptrConfig.IPv4SubnetSize {
-	case 8:
+	case IPv4Subnet8:
 		// /8: Use first octet (e.g., 4.3.2.1 -> 1.in-addr.arpa)
 		return fmt.Sprintf("%s.in-addr.arpa", octets[3])
-	case 16:
+	case IPv4Subnet16:
 		// /16: Use first two octets (e.g., 4.3.2.1 -> 2.1.in-addr.arpa)
 		return fmt.Sprintf("%s.%s.in-addr.arpa", octets[2], octets[3])
-	case 24:
+	case IPv4Subnet24:
 		// /24: Use first three octets (e.g., 4.3.2.1 -> 3.2.1.in-addr.arpa)
 		return fmt.Sprintf("%s.%s.%s.in-addr.arpa", octets[1], octets[2], octets[3])
 	default:
@@ -493,11 +497,11 @@ func (c *Client) extractIPv6ZoneFromPTRName(ptrName string) string {
 	// Calculate how many nibbles to use based on subnet size
 	var nibblesToUse int
 	switch c.ptrConfig.IPv6SubnetSize {
-	case 32:
+	case IPv6Subnet32:
 		nibblesToUse = 8 // /32 = 8 nibbles
-	case 48:
+	case IPv6Subnet48:
 		nibblesToUse = 12 // /48 = 12 nibbles
-	case 64:
+	case IPv6Subnet64:
 		nibblesToUse = 16 // /64 = 16 nibbles
 	default:
 		return ""
@@ -587,8 +591,8 @@ func ipv6ToReverseDNS(ipStr string) string {
 	// Convert each byte to two nibbles and reverse the order
 	var nibbles []string
 	for i := len(ipv6) - 1; i >= 0; i-- {
-		nibbles = append(nibbles, fmt.Sprintf("%x", ipv6[i]&0x0f))
-		nibbles = append(nibbles, fmt.Sprintf("%x", (ipv6[i]&0xf0)>>4))
+		nibbles = append(nibbles, fmt.Sprintf("%x", ipv6[i]&IPv6NibbleMaskLow))
+		nibbles = append(nibbles, fmt.Sprintf("%x", (ipv6[i]&IPv6NibbleMaskHigh)>>IPv6NibbleShift))
 	}
 
 	return strings.Join(nibbles, ".") + ".ip6.arpa."
