@@ -1,33 +1,114 @@
-name: Release
+name: release
 
 on:
   push:
+    branches:
+    - master
+    - main
+    - v[1-9].*
+    - prep-v[1-9].*
     tags:
-      - 'v*'
-  workflow_dispatch:
+    - v[1-9].*
+  pull_request:
+    branches:
+    - master
+    - main
+    - v[1-9].*
+    - prep-v[1-9].*
 
-permissions:
-  contents: write
+env:
+  BUILDTIME_BASE: "golang:1.25.1"
+  RUNTIME_BASE: "gcr.io/distroless/static"
+  GO_VERSION: "~1.25.1"
+  GO_CACHE: "/home/runner/.cache/go-build"
+  GO_MOD_CACHE: "/home/runner/go/pkg/mod"
 
 jobs:
-  goreleaser:
+  # Builds tailscale-bind-ddns binary
+  ci-build-tailscale-bind-ddns:
+    name: ci-build-tailscale-bind-ddns
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.25'
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+      id: go
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install dependencies
+      run: |
+        go get ./...
+
+    - name: Build
+      run: go build -v -ldflags '-s -w' main.go
+      env:
+        CGO_ENABLED: "0"
+
+# Builds Container only if a tag or a pull request from a source branch within the repository
+  ci-build-container:
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker (RC, Tag)
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: aauren/rtorrent-exporter
+
+    # Tagging a proper release, update latest
+    - name: Build and push - New Tag
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: |
+          linux/amd64
+          linux/arm64
+          linux/arm/v7
+          linux/s390x
+          linux/ppc64le
+        push: true
+        build-args: |
+          BUILDTIME_BASE=${{ env.BUILDTIME_BASE }}
+          RUNTIME_BASE=${{ env.RUNTIME_BASE }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+  # Runs Go Releaser on Tag Event
+  ci-goreleaser-tag:
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+      id: go
+
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        version: latest
+        args: release --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

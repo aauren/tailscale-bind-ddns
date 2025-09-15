@@ -7,24 +7,49 @@ COMMIT?=$(shell git rev-parse --short HEAD)
 DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 DOCKER_IMAGE=aauren/tailscale-bind-ddns
 GO_VERSION=1.25
+BUILD_IN_DOCKER?=true
+IS_ROOT?=$(shell id -u)
+OSX?=$(shell uname -s | grep -i darwin)
+
+# Docker variables
+IN_DOCKER_GROUP=$(filter docker,$(shell groups))
+DOCKER=$(if $(or $(IN_DOCKER_GROUP),$(IS_ROOT),$(OSX)),docker,sudo docker)
+
+# Go Variables
+GO_MOD_CACHE?=$(shell go env GOMODCACHE)
+GO_CACHE?=$(shell go env GOCACHE)
+GOARCH?=$(shell go env GOARCH)
 
 # Containerized Go commands
 DOCKER_RUN=docker run --rm -v $(PWD):/app -w /app
 GOLANG_IMAGE=golang:$(GO_VERSION)-alpine
 GOLANGCI_IMAGE=golangci/golangci-lint:latest
 
-.PHONY: all build clean test deps lint docker-build docker-push ci help
+.PHONY: all clean test deps lint docker-build docker-push ci help
 
 # Default target
-all: test build
+all: test tailscale-bind-ddns
 
 # Build the binary locally
-build:
-	go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o $(BINARY_NAME) .
-
-# Build the binary in container
-build-container:
-	$(DOCKER_RUN) $(GOLANG_IMAGE) sh -c "apk add --no-cache git ca-certificates && go build -ldflags '-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)' -o $(BINARY_NAME) ."
+tailscale-bind-ddns:
+ifeq "$(BUILD_IN_DOCKER)" "true"
+	@echo Starting tailscale-bind-ddns build for $(GOARCH) on $(shell go env GOHOSTARCH) in Docker
+	$(DOCKER) run -v $(PWD):/go/src/github.com/aauren/tailscale-bind-ddns \
+		-v $(GO_CACHE):/root/.cache/go-build \
+		-v $(GO_MOD_CACHE):/go/pkg/mod \
+		-w /go/src/github.com/aauren/tailscale-bind-ddns $(GOLANG_IMAGE) \
+		sh -c \
+		'CGO_ENABLED=0 go build -v \
+		-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" \
+		-o $(BINARY_NAME) .'
+	@echo Finished tailscale-bind-ddns build for $(GOARCH) on $(shell go env GOHOSTARCH) in Docker
+else
+	@echo Starting tailscale-bind-ddns build for $(GOARCH) on $(shell go env GOHOSTARCH)
+	CGO_ENABLED=0 go build -v \
+		-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" \
+		-o $(BINARY_NAME) .
+	@echo Finished rtorrent-exporter build for $(GOARCH) on $(shell go env GOHOSTARCH)
+endif
 
 # Build for multiple platforms
 build-all:
@@ -39,6 +64,7 @@ clean:
 	go clean
 	rm -f $(BINARY_NAME)
 	rm -f $(BINARY_NAME)-*
+	rm -rf dist/
 
 # Run tests locally
 test:
