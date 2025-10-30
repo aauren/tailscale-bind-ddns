@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/aauren/tailscale-bind-ddns/pkg/app"
+	"github.com/aauren/tailscale-bind-ddns/pkg/metrics"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"k8s.io/klog/v2"
@@ -28,8 +29,13 @@ to Bind DNS records. The application will run until interrupted.`,
 		klog.Info("Starting Tailscale-Bind DDNS application")
 		klog.V(2).Infof("Configuration: %+v", cfg)
 
+		metricsManager, err := metrics.NewManager(cfg.Metrics)
+		if err != nil {
+			return fmt.Errorf("creating metrics manager: %w", err)
+		}
+
 		// Create application
-		application, err := app.NewApp(cfg)
+		application, err := app.NewApp(cfg, metricsManager)
 		if err != nil {
 			return fmt.Errorf("creating application: %w", err)
 		}
@@ -37,6 +43,10 @@ to Bind DNS records. The application will run until interrupted.`,
 		// Set up graceful shutdown
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+
+		if metricsManager != nil && metricsManager.Enabled() {
+			go metricsManager.RunServer(ctx)
+		}
 
 		// Handle signals
 		sigChan := make(chan os.Signal, 1)
@@ -72,6 +82,9 @@ func init() {
 	runCmd.Flags().Duration("bind-update-interval", defaultUpdateInterval, "DNS update interval")
 
 	runCmd.Flags().Bool("dry-run", false, "Run in dry-run mode (don't actually update DNS)")
+	runCmd.Flags().Bool("metrics-enabled", false, "Expose Prometheus metrics endpoint")
+	runCmd.Flags().String("metrics-listen-address", ":9729", "Address to listen on for Prometheus metrics (host:port)")
+	runCmd.Flags().Bool("metrics-per-endpoint", false, "Enable per-endpoint metrics with FQDN/IP labels")
 
 	// Bind flags to viper
 	bindRunFlagsToViper()
@@ -125,5 +138,14 @@ func bindRunFlagsToViper() {
 	// General flags
 	if err := viper.BindPFlag("general.dry_run", runCmd.Flags().Lookup("dry-run")); err != nil {
 		klog.Errorf("Failed to bind dry-run flag: %v", err)
+	}
+	if err := viper.BindPFlag("metrics.enabled", runCmd.Flags().Lookup("metrics-enabled")); err != nil {
+		klog.Errorf("Failed to bind metrics-enabled flag: %v", err)
+	}
+	if err := viper.BindPFlag("metrics.listen_address", runCmd.Flags().Lookup("metrics-listen-address")); err != nil {
+		klog.Errorf("Failed to bind metrics-listen-address flag: %v", err)
+	}
+	if err := viper.BindPFlag("metrics.per_endpoint_metric", runCmd.Flags().Lookup("metrics-per-endpoint")); err != nil {
+		klog.Errorf("Failed to bind metrics-per-endpoint flag: %v", err)
 	}
 }

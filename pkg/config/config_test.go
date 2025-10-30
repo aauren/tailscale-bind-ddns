@@ -106,6 +106,20 @@ func TestLoadConfig(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "metrics enabled without listen address",
+			setup: func() {
+				viper.Set("tailscale.api_key", "test-api-key")
+				viper.Set("tailscale.tailnet", "test.example.com")
+				viper.Set("bind.server", "dns.example.com")
+				viper.Set("bind.zone", "test.example.com")
+				viper.Set("bind.key_name", "test-key")
+				viper.Set("bind.key_secret", "test-secret")
+				viper.Set("metrics.enabled", true)
+				viper.Set("metrics.listen_address", "")
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,6 +163,10 @@ func TestConfigValidate(t *testing.T) {
 					Zone:      "test.example.com",
 					KeyName:   "test-key",
 					KeySecret: "test-secret",
+				},
+				Metrics: MetricsConfig{
+					Enabled:       true,
+					ListenAddress: ":9729",
 				},
 			},
 			wantErr: false,
@@ -260,6 +278,25 @@ func TestConfigValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "metrics enabled without listen address",
+			config: &Config{
+				Tailscale: TailscaleConfig{
+					APIKey:  "test-api-key",
+					Tailnet: "test.example.com",
+				},
+				Bind: BindConfig{
+					Server:    "dns.example.com",
+					Zone:      "test.example.com",
+					KeyName:   "test-key",
+					KeySecret: "test-secret",
+				},
+				Metrics: MetricsConfig{
+					Enabled: true,
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -286,6 +323,9 @@ func TestSetDefaults(t *testing.T) {
 	assert.Equal(t, "60s", viper.GetString("bind.update_interval"))
 	assert.Equal(t, "info", viper.GetString("general.log_level"))
 	assert.Equal(t, false, viper.GetBool("general.dry_run"))
+	assert.Equal(t, false, viper.GetBool("metrics.enabled"))
+	assert.Equal(t, ":9729", viper.GetString("metrics.listen_address"))
+	assert.Equal(t, false, viper.GetBool("metrics.per_endpoint_metric"))
 }
 
 func TestBindEnvVars(t *testing.T) {
@@ -318,4 +358,7 @@ func TestConfigDefaults(t *testing.T) {
 	assert.Equal(t, 60*time.Second, config.Bind.UpdateInterval)
 	assert.Equal(t, "info", config.General.LogLevel)
 	assert.Equal(t, false, config.General.DryRun)
+	assert.False(t, config.Metrics.Enabled)
+	assert.Equal(t, ":9729", config.Metrics.ListenAddress)
+	assert.False(t, config.Metrics.PerEndpointMetric)
 }

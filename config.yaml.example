@@ -80,3 +80,14 @@ general:
 
   # Run in dry-run mode (don't actually update DNS)
   dry_run: false
+
+# Prometheus metrics configuration
+metrics:
+  # Expose the metrics HTTP endpoint
+  enabled: false
+
+  # Address to bind for the metrics server
+  listen_address: ":9729"
+
+  # Emit per-endpoint gauges labeled by FQDN/IP
+  per_endpoint_metric: false

@@ -176,6 +176,66 @@ Test the application without making actual DNS changes:
 ./tailscale-bind-ddns run --dry-run
 ```
 
+## Prometheus Metrics
+
+The application can expose rich Prometheus metrics describing Tailscale polling, DNS update activity, and endpoint lifecycle changes.
+
+### Enabling Metrics
+
+- Configuration file snippet:
+
+  ```yaml
+  metrics:
+    enabled: true
+    listen_address: ":9729"
+    per_endpoint_metric: false
+  ```
+
+- Command-line flags:
+
+  ```bash
+  ./tailscale-bind-ddns run --metrics-enabled --metrics-listen-address=:9729 --metrics-per-endpoint
+  ```
+
+- Environment variables:
+
+  ```bash
+  export TSBD_METRICS_ENABLED=true
+  export TSBD_METRICS_LISTEN_ADDRESS=":9729"
+  export TSBD_METRICS_PER_ENDPOINT_METRIC=true
+  ```
+
+When enabled, an HTTP server serving `/metrics` is started on the configured address. Per-endpoint gauges remain disabled by default to avoid emitting label-heavy metrics unless explicitly requested.
+
+### Exported Metrics
+
+The metrics endpoint includes the standard Go runtime/process collectors plus these application-specific series:
+
+- `tailscale_bind_endpoints_total`
+- `tailscale_bind_endpoints_online_total`
+- `tailscale_bind_endpoints_authorized_total`
+- `tailscale_bind_endpoints_ipv4_total`
+- `tailscale_bind_endpoints_ipv6_total`
+- `tailscale_bind_endpoint_adds_total`
+- `tailscale_bind_endpoint_removals_total`
+- `tailscale_bind_endpoint_deletes_total`
+- `tailscale_bind_endpoint_connected`
+- `tailscale_bind_tailscale_poll_success_total`
+- `tailscale_bind_tailscale_poll_failure_total`
+- `tailscale_bind_tailscale_poll_duration_seconds`
+- `tailscale_bind_bind_update_success_total`
+- `tailscale_bind_bind_update_failure_total`
+- `tailscale_bind_bind_update_duration_seconds`
+- `tailscale_bind_records_created_total`
+- `tailscale_bind_records_updated_total`
+- `tailscale_bind_records_removed_total`
+- `tailscale_bind_record_queue_depth`
+- `tailscale_bind_last_successful_update_timestamp_seconds`
+
+When `per_endpoint_metric` is enabled, the additional gauges `tailscale_bind_endpoint_authorized{fqdn="...",ip="..."}` and `tailscale_bind_endpoint_connected{fqdn="...",ip="..."}` emit `1` for authorized nodes and actively connected nodes respectively (dropping to `0` when authorization is revoked or the node disconnects). Deleting an endpoint removes the corresponding series.
+
+You can import the bundled Grafana dashboard located at `docs/grafana/tailscale-bind-ddns-metrics.json` to visualize these metrics quickly. Point the dashboard's datasource variable at your Prometheus instance.
+
 ## Setup Instructions
 
 ### 1. Tailscale Setup

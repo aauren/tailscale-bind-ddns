@@ -21,6 +21,7 @@ type Config struct {
 	Tailscale TailscaleConfig `mapstructure:"tailscale"`
 	Bind      BindConfig      `mapstructure:"bind"`
 	General   GeneralConfig   `mapstructure:"general"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
 }
 
 // TailscaleConfig holds Tailscale-specific configuration
@@ -63,6 +64,13 @@ type PTRConfig struct {
 type GeneralConfig struct {
 	LogLevel string `mapstructure:"log_level"`
 	DryRun   bool   `mapstructure:"dry_run"`
+}
+
+// MetricsConfig holds Prometheus metrics configuration
+type MetricsConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	ListenAddress     string `mapstructure:"listen_address"`
+	PerEndpointMetric bool   `mapstructure:"per_endpoint_metric"`
 }
 
 // LoadConfig loads configuration from multiple sources
@@ -113,6 +121,9 @@ func setDefaults() {
 	viper.SetDefault("bind.update_interval", "60s")
 	viper.SetDefault("general.log_level", "info")
 	viper.SetDefault("general.dry_run", false)
+	viper.SetDefault("metrics.enabled", false)
+	viper.SetDefault("metrics.listen_address", ":9729")
+	viper.SetDefault("metrics.per_endpoint_metric", false)
 
 	// PTR record defaults
 	viper.SetDefault("bind.ptr.enabled", false)
@@ -200,6 +211,17 @@ func bindEnvVars() {
 	if err := viper.BindEnv("general.dry_run", "TSBD_DRY_RUN"); err != nil {
 		klog.Errorf("Failed to bind TSBD_DRY_RUN: %v", err)
 	}
+
+	// Metrics configuration
+	if err := viper.BindEnv("metrics.enabled", "TSBD_METRICS_ENABLED"); err != nil {
+		klog.Errorf("Failed to bind TSBD_METRICS_ENABLED: %v", err)
+	}
+	if err := viper.BindEnv("metrics.listen_address", "TSBD_METRICS_LISTEN_ADDRESS"); err != nil {
+		klog.Errorf("Failed to bind TSBD_METRICS_LISTEN_ADDRESS: %v", err)
+	}
+	if err := viper.BindEnv("metrics.per_endpoint_metric", "TSBD_METRICS_PER_ENDPOINT_METRIC"); err != nil {
+		klog.Errorf("Failed to bind TSBD_METRICS_PER_ENDPOINT_METRIC: %v", err)
+	}
 }
 
 // Validate validates the configuration
@@ -230,6 +252,10 @@ func (c *Config) Validate() error {
 
 	if c.Bind.KeySecret == "" {
 		return fmt.Errorf("bind key_secret must be provided")
+	}
+
+	if c.Metrics.Enabled && c.Metrics.ListenAddress == "" {
+		return fmt.Errorf("metrics listen_address must be provided when metrics are enabled")
 	}
 
 	// Validate PTR configuration if enabled
