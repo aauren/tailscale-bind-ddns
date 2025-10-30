@@ -6,9 +6,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aauren/tailscale-bind-ddns/pkg/bind"
 	"github.com/aauren/tailscale-bind-ddns/pkg/config"
+	"github.com/aauren/tailscale-bind-ddns/pkg/metrics"
 	"github.com/aauren/tailscale-bind-ddns/pkg/tailscale"
 	"k8s.io/klog/v2"
 )
@@ -20,11 +22,12 @@ type App struct {
 	bindClient      *bind.Client
 	machineChan     chan []tailscale.Machine
 	recordChan      chan []bind.DNSRecord
+	metricsManager  *metrics.Manager
 	wg              sync.WaitGroup
 }
 
 // NewApp creates a new application instance
-func NewApp(cfg *config.Config) (*App, error) {
+func NewApp(cfg *config.Config, metricsManager *metrics.Manager) (*App, error) {
 	// Create Tailscale client
 	var tsClient *tailscale.Client
 	var err error
@@ -59,6 +62,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		bindClient:      bindClient,
 		machineChan:     make(chan []tailscale.Machine, 10),
 		recordChan:      make(chan []bind.DNSRecord, 10),
+		metricsManager:  metricsManager,
 	}, nil
 }
 
@@ -82,14 +86,14 @@ func (a *App) Run(ctx context.Context) error {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		a.tailscaleClient.StartPolling(ctx, a.config.Tailscale.PollInterval, a.machineChan)
+		a.pollTailscale(ctx)
 	}()
 
 	// Start Bind DDNS updating
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		a.bindClient.StartUpdating(ctx, a.config.Bind.UpdateInterval, a.recordChan, a.config.General.DryRun)
+		a.startUpdating(ctx)
 	}()
 
 	// Wait for context cancellation
@@ -130,6 +134,9 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 			if len(allRecords) > 0 {
 				select {
 				case a.recordChan <- allRecords:
+					if a.metricsManager != nil {
+						a.metricsManager.ObserveRecordQueue(len(a.recordChan))
+					}
 				case <-ctx.Done():
 					return
 				}
@@ -140,6 +147,146 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (a *App) pollTailscale(ctx context.Context) {
+	klog.Info("Starting Tailscale polling loop")
+	a.fetchAndPublishMachines(ctx)
+
+	ticker := time.NewTicker(a.config.Tailscale.PollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			klog.Info("Tailscale polling stopped")
+			return
+		case <-ticker.C:
+			a.fetchAndPublishMachines(ctx)
+		}
+	}
+}
+
+func (a *App) fetchAndPublishMachines(ctx context.Context) {
+	start := time.Now()
+	machines, err := a.tailscaleClient.GetMachines(ctx)
+	duration := time.Since(start)
+
+	if a.metricsManager != nil {
+		a.metricsManager.ObservePoll(toMachineInfos(machines), duration, err)
+	}
+
+	if err != nil {
+		klog.Errorf("Failed to get machines: %v", err)
+		return
+	}
+
+	select {
+	case a.machineChan <- machines:
+	case <-ctx.Done():
+	}
+}
+
+func (a *App) startUpdating(ctx context.Context) {
+	klog.Info("Starting Bind update loop")
+
+	ticker := time.NewTicker(a.config.Bind.UpdateInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			klog.Info("DDNS updating stopped")
+			return
+		case records, ok := <-a.recordChan:
+			if !ok {
+				klog.Info("Record channel closed, stopping updates")
+				return
+			}
+			a.processBindUpdate(ctx, records)
+		case <-ticker.C:
+			if cont := a.flushPendingUpdates(ctx); !cont {
+				return
+			}
+		}
+	}
+}
+
+func (a *App) flushPendingUpdates(ctx context.Context) bool {
+flushLoop:
+	for {
+		select {
+		case records, ok := <-a.recordChan:
+			if !ok {
+				klog.Info("Record channel closed during flush, stopping updates")
+				return false
+			}
+			a.processBindUpdate(ctx, records)
+		default:
+			if a.metricsManager != nil {
+				a.metricsManager.ObserveRecordQueue(len(a.recordChan))
+			}
+			break flushLoop
+		}
+	}
+	return true
+}
+
+func (a *App) processBindUpdate(ctx context.Context, records []bind.DNSRecord) {
+	if len(records) == 0 {
+		if a.metricsManager != nil {
+			a.metricsManager.ObserveRecordQueue(len(a.recordChan))
+		}
+		return
+	}
+
+	start := time.Now()
+	err := a.bindClient.UpdateRecords(ctx, records, a.config.General.DryRun)
+	duration := time.Since(start)
+
+	if err != nil {
+		klog.Errorf("Failed to update DNS records: %v", err)
+	}
+
+	if a.metricsManager != nil {
+		a.metricsManager.ObserveBindUpdate(toRecordInfos(records), duration, err)
+		a.metricsManager.ObserveRecordQueue(len(a.recordChan))
+	}
+}
+
+func toMachineInfos(machines []tailscale.Machine) []metrics.MachineInfo {
+	if len(machines) == 0 {
+		return nil
+	}
+
+	infos := make([]metrics.MachineInfo, 0, len(machines))
+	for _, machine := range machines {
+		infos = append(infos, metrics.MachineInfo{
+			ID:         machine.ID,
+			Name:       machine.Name,
+			IPv4:       machine.IPv4Address,
+			IPv6:       machine.IPv6Address,
+			Online:     machine.Online,
+			Authorized: machine.Authorized,
+		})
+	}
+	return infos
+}
+
+func toRecordInfos(records []bind.DNSRecord) []metrics.RecordInfo {
+	if len(records) == 0 {
+		return nil
+	}
+
+	infos := make([]metrics.RecordInfo, 0, len(records))
+	for _, record := range records {
+		infos = append(infos, metrics.RecordInfo{
+			Name:  record.Name,
+			Type:  record.Type,
+			Value: record.Value,
+		})
+	}
+	return infos
 }
 
 // machinesToRecords converts a list of machines to DNS records

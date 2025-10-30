@@ -19,7 +19,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		// Create application to get status
-		application, err := app.NewApp(cfg)
+		application, err := app.NewApp(cfg, nil)
 		if err != nil {
 			return fmt.Errorf("creating application: %w", err)
 		}

@@ -16,6 +16,8 @@ type Client struct {
 	tailnet string
 }
 
+const connectivityStaleThreshold = 2 * time.Minute
+
 // Machine represents a Tailscale machine
 type Machine struct {
 	ID          string    `json:"id"`
@@ -24,6 +26,7 @@ type Machine struct {
 	IPv6Address string    `json:"ipv6_address"`
 	LastSeen    time.Time `json:"last_seen"`
 	Online      bool      `json:"online"`
+	Authorized  bool      `json:"authorized"`
 }
 
 // NewClient creates a new Tailscale client
@@ -78,7 +81,7 @@ func NewOAuthClient(clientID, clientSecret, tailnet string) (*Client, error) {
 func (c *Client) GetMachines(ctx context.Context) ([]Machine, error) {
 	klog.V(2).Info("Fetching machines from Tailscale")
 
-	devices, err := c.client.Devices().List(ctx)
+	devices, err := c.client.Devices().ListWithAllFields(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching devices: %w", err)
 	}
@@ -86,10 +89,23 @@ func (c *Client) GetMachines(ctx context.Context) ([]Machine, error) {
 	var machines []Machine
 	for _, device := range devices {
 		machine := Machine{
-			ID:       device.ID,
-			Name:     device.Name,
-			LastSeen: device.LastSeen.Time,
-			Online:   device.Authorized, // Use Authorized as a proxy for online status
+			ID:         device.ID,
+			Name:       device.Name,
+			LastSeen:   device.LastSeen.Time,
+			Authorized: device.Authorized,
+		}
+
+		if device.ClientConnectivity != nil {
+			lastSeen := device.LastSeen.Time
+			fresh := !lastSeen.IsZero()
+			if fresh {
+				// Only treat connectivity as active if the device checked in recently.
+				if time.Since(lastSeen) <= connectivityStaleThreshold {
+					if len(device.ClientConnectivity.Endpoints) > 0 || device.ClientConnectivity.DERP != "" {
+						machine.Online = true
+					}
+				}
+			}
 		}
 
 		// Extract IPv4 address from the device's IP addresses

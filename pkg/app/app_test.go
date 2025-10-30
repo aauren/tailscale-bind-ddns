@@ -1,11 +1,15 @@
 package app
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/aauren/tailscale-bind-ddns/pkg/bind"
 	"github.com/aauren/tailscale-bind-ddns/pkg/config"
+	"github.com/aauren/tailscale-bind-ddns/pkg/metrics"
 	"github.com/aauren/tailscale-bind-ddns/pkg/tailscale"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,7 +114,10 @@ func TestNewApp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app, err := NewApp(tt.config)
+			metricsManager, err := metrics.NewManager(config.MetricsConfig{})
+			require.NoError(t, err)
+
+			app, err := NewApp(tt.config, metricsManager)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -253,6 +260,41 @@ func TestMachinesToRecords(t *testing.T) {
 	}
 }
 
+func TestConvertMachinesToRecordsUpdatesQueueMetric(t *testing.T) {
+	metricsManager := mustMetricsManager(t, config.MetricsConfig{Enabled: true})
+	app := &App{
+		config: &config.Config{
+			Bind: config.BindConfig{TTL: 300 * time.Second},
+		},
+		machineChan:    make(chan []tailscale.Machine, 1),
+		recordChan:     make(chan []bind.DNSRecord, 1),
+		metricsManager: metricsManager,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go app.convertMachinesToRecords(ctx)
+
+	machines := []tailscale.Machine{{
+		ID:          "machine1",
+		Name:        "machine1.example.com",
+		IPv4Address: "100.64.0.1",
+		Online:      true,
+	}}
+
+	app.machineChan <- machines
+
+	gauge := metricsManager.RecordQueueGauge()
+	require.NotNil(t, gauge)
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(gauge) == 1.0
+	}, time.Second, 10*time.Millisecond)
+
+	records := <-app.recordChan
+	require.Len(t, records, 1)
+}
+
 func TestGetStatus(t *testing.T) {
 	config := &config.Config{
 		Tailscale: config.TailscaleConfig{
@@ -312,7 +354,7 @@ func TestAppRun(t *testing.T) {
 	// This test would require mocking the clients
 	// For now, we'll test the basic structure
 
-	config := &config.Config{
+	cfg := &config.Config{
 		Tailscale: config.TailscaleConfig{
 			APIKey:       "test-api-key",
 			Tailnet:      "test.example.com",
@@ -333,15 +375,23 @@ func TestAppRun(t *testing.T) {
 			DryRun:   true,
 		},
 	}
+	metricsManager, err := metrics.NewManager(config.MetricsConfig{})
+	require.NoError(t, err)
 
-	app, err := NewApp(config)
+	app, err := NewApp(cfg, metricsManager)
 	require.NoError(t, err)
 	require.NotNil(t, app)
 
 	// Test that the app can be created and has the expected structure
-	assert.Equal(t, config, app.config)
+	assert.Equal(t, cfg, app.config)
 	assert.NotNil(t, app.tailscaleClient)
 	assert.NotNil(t, app.bindClient)
 	assert.NotNil(t, app.machineChan)
 	assert.NotNil(t, app.recordChan)
+}
+
+func mustMetricsManager(t *testing.T, cfg config.MetricsConfig) *metrics.Manager {
+	manager, err := metrics.NewManager(cfg)
+	require.NoError(t, err)
+	return manager
 }

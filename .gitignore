@@ -5,7 +5,6 @@
 *.so
 *.dylib
 tailscale-bind-ddns
-tailscale-bind-ddns-*
 
 # Test binary, built with `go test -c`
 *.test

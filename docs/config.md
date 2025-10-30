@@ -51,6 +51,14 @@ The application supports three configuration methods (in order of precedence):
 | Log Level | `--log-level` | `TSBD_LOG_LEVEL` | Log level (debug, verbose, info) (WARNING: debug level may leak secrets) |
 | Dry Run | `--dry-run` | `TSBD_DRY_RUN` | Run in dry-run mode |
 
+### Metrics Configuration
+
+| Option | CLI Flag | Environment Variable | Description |
+|--------|----------|---------------------|-------------|
+| Enabled | `--metrics-enabled` | `TSBD_METRICS_ENABLED` | Expose the Prometheus metrics endpoint |
+| Listen Address | `--metrics-listen-address` | `TSBD_METRICS_LISTEN_ADDRESS` | Address for the metrics HTTP server (default: `:9729`) |
+| Per Endpoint Metric | `--metrics-per-endpoint` | `TSBD_METRICS_PER_ENDPOINT_METRIC` | Emit per-endpoint gauges labeled by FQDN and IP |
+
 ## Example Configuration File
 
 ```yaml
@@ -86,4 +94,9 @@ bind:
 general:
   log_level: "info"
   dry_run: false
+
+metrics:
+  enabled: true
+  listen_address: ":9729"
+  per_endpoint_metric: false
 ```
