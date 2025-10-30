@@ -61,3 +61,6 @@ secrets.yml
 # Backup files
 *.bak
 *.backup
+
+# Cursor Plans
+/.cursor/plans
