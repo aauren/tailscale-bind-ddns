@@ -47,13 +47,11 @@ release:
   github:
     owner: aauren
     name: tailscale-bind-ddns
-  draft: false
+  draft: true
   prerelease: false
   mode: replace
   header: |
     ## Tailscale-Bind DDNS {{ .Tag }}
-
-    A Go application that automatically syncs Tailscale machines to Bind DNS records using RFC 2136 dynamic updates with TSIG authentication.
 
     ### What's Changed
   footer: |
