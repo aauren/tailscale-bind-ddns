@@ -24,6 +24,9 @@ type App struct {
 	recordChan      chan []bind.DNSRecord
 	metricsManager  *metrics.Manager
 	wg              sync.WaitGroup
+	stateMu         sync.Mutex
+	currentRecords  map[string]bind.DNSRecord
+	desiredRecords  map[string]bind.DNSRecord
 }
 
 // NewApp creates a new application instance
@@ -73,6 +76,10 @@ func (a *App) Run(ctx context.Context) error {
 	// Validate Bind connection
 	if err := a.bindClient.ValidateConnection(ctx); err != nil {
 		return fmt.Errorf("bind connection validation failed: %w", err)
+	}
+
+	if err := a.loadExistingDNSRecords(ctx); err != nil {
+		return fmt.Errorf("loading existing DNS records: %w", err)
 	}
 
 	// Start the machine-to-record converter
@@ -126,20 +133,20 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 			records := a.machinesToRecords(machines)
 			ptrRecords := a.createPTRRecords(machines)
 
-			// Combine A/AAAA and PTR records
-			allRecords := make([]bind.DNSRecord, 0, len(records)+len(ptrRecords))
-			allRecords = append(allRecords, records...)
-			allRecords = append(allRecords, ptrRecords...)
+			//nolint:gocritic // we understand that we're appending to a new array here
+			allRecords := append(records, ptrRecords...)
+			updates := a.prepareRecordUpdates(allRecords)
+			if len(updates) == 0 {
+				continue
+			}
 
-			if len(allRecords) > 0 {
-				select {
-				case a.recordChan <- allRecords:
-					if a.metricsManager != nil {
-						a.metricsManager.ObserveRecordQueue(len(a.recordChan))
-					}
-				case <-ctx.Done():
-					return
+			select {
+			case a.recordChan <- updates:
+				if a.metricsManager != nil {
+					a.metricsManager.ObserveRecordQueue(len(a.recordChan))
 				}
+			case <-ctx.Done():
+				return
 			}
 
 		case <-ctx.Done():
@@ -246,6 +253,8 @@ func (a *App) processBindUpdate(ctx context.Context, records []bind.DNSRecord) {
 
 	if err != nil {
 		klog.Errorf("Failed to update DNS records: %v", err)
+	} else {
+		a.markStateApplied()
 	}
 
 	if a.metricsManager != nil {
@@ -400,6 +409,107 @@ func (a *App) GetStatus() map[string]interface{} {
 		"dry_run":           a.config.General.DryRun,
 		"log_level":         a.config.General.LogLevel,
 	}
+}
+
+func (a *App) loadExistingDNSRecords(ctx context.Context) error {
+	records, err := a.bindClient.FetchInventory(ctx)
+	if err != nil {
+		return err
+	}
+
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	a.currentRecords = recordsToMap(records)
+	a.desiredRecords = cloneRecordMap(a.currentRecords)
+
+	klog.Infof("Initialized DNS state with %d records", len(a.currentRecords))
+	return nil
+}
+
+func (a *App) prepareRecordUpdates(records []bind.DNSRecord) []bind.DNSRecord {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	desired := recordsToMap(records)
+
+	var updates []bind.DNSRecord
+
+	for key, desiredRecord := range desired {
+		if current, ok := a.currentRecords[key]; !ok ||
+			current.Value != desiredRecord.Value ||
+			current.TTL != desiredRecord.TTL {
+			updates = append(updates, desiredRecord)
+		}
+	}
+
+	for key, current := range a.currentRecords {
+		if _, ok := desired[key]; !ok {
+			toDelete := current
+			toDelete.Delete = true
+			updates = append(updates, toDelete)
+		}
+	}
+
+	a.desiredRecords = desired
+	if len(updates) == 0 && mapsEqual(desired, a.currentRecords) {
+		return nil
+	}
+
+	return updates
+}
+
+func (a *App) markStateApplied() {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	a.currentRecords = cloneRecordMap(a.desiredRecords)
+}
+
+func recordsToMap(records []bind.DNSRecord) map[string]bind.DNSRecord {
+	if len(records) == 0 {
+		return make(map[string]bind.DNSRecord)
+	}
+
+	result := make(map[string]bind.DNSRecord, len(records))
+	for _, record := range records {
+		record.Delete = false
+		result[recordMapKey(record)] = record
+	}
+	return result
+}
+
+func cloneRecordMap(src map[string]bind.DNSRecord) map[string]bind.DNSRecord {
+	if len(src) == 0 {
+		return make(map[string]bind.DNSRecord)
+	}
+
+	clone := make(map[string]bind.DNSRecord, len(src))
+	for key, record := range src {
+		clone[key] = record
+	}
+	return clone
+}
+
+func mapsEqual(a, b map[string]bind.DNSRecord) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for key, recordA := range a {
+		recordB, ok := b[key]
+		if !ok {
+			return false
+		}
+		if recordA.Value != recordB.Value || recordA.TTL != recordB.TTL {
+			return false
+		}
+	}
+
+	return true
+}
+
+func recordMapKey(record bind.DNSRecord) string {
+	return fmt.Sprintf("%s|%s", record.Type, record.Name)
 }
 
 // sanitizeDNSName sanitizes a string to be a valid DNS record name
