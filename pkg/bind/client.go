@@ -33,6 +33,10 @@ const (
 	IPv6NibbleShift    = 4    // Nibble shift amount
 )
 
+const tsigDefaultTimeout = 300
+
+type axfrFunc func(ctx context.Context, zone string) ([]dns.RR, error)
+
 // Client represents a Bind DDNS client
 type Client struct {
 	server    string
@@ -45,6 +49,8 @@ type Client struct {
 
 	// PTR configuration
 	ptrConfig *config.PTRConfig
+
+	axfr axfrFunc
 }
 
 // DNSRecord represents a DNS record (A or PTR)
@@ -52,7 +58,9 @@ type DNSRecord struct {
 	Name  string
 	Value string
 	TTL   uint32
-	Type  string // "A" or "PTR"
+	Type  string // "A", "AAAA", or "PTR"
+	// Delete indicates that the record should be removed without inserting a replacement.
+	Delete bool
 }
 
 // NewClient creates a new Bind DDNS client
@@ -76,7 +84,7 @@ func NewClient(
 		return nil, fmt.Errorf("key secret is required")
 	}
 
-	return &Client{
+	client := &Client{
 		server:    server,
 		port:      port,
 		zone:      zone,
@@ -85,20 +93,199 @@ func NewClient(
 		algorithm: algorithm,
 		ttl:       uint32(ttl.Seconds()),
 		ptrConfig: ptrConfig,
-	}, nil
+	}
+	client.init()
+	return client, nil
+}
+
+// init injects defaults that require the client instance.
+func (c *Client) init() {
+	if c.axfr == nil {
+		c.axfr = c.axfrTransfer
+	}
+}
+
+func (c *Client) serverAddress() string {
+	return net.JoinHostPort(c.server, fmt.Sprintf("%d", c.port))
+}
+
+// FetchInventory retrieves the current DNS records from the managed zones via AXFR.
+func (c *Client) FetchInventory(ctx context.Context) ([]DNSRecord, error) {
+	c.init()
+
+	var inventory []DNSRecord
+
+	forwardRecords, err := c.collectZoneRecords(ctx, c.zone, func(rr dns.RR) *DNSRecord {
+		switch v := rr.(type) {
+		case *dns.A:
+			name := trimZoneSuffix(v.Hdr.Name, c.zone)
+			if name == "" {
+				return nil
+			}
+			return &DNSRecord{
+				Name:  name,
+				Value: v.A.String(),
+				TTL:   v.Hdr.Ttl,
+				Type:  "A",
+			}
+		case *dns.AAAA:
+			name := trimZoneSuffix(v.Hdr.Name, c.zone)
+			if name == "" {
+				return nil
+			}
+			return &DNSRecord{
+				Name:  name,
+				Value: v.AAAA.String(),
+				TTL:   v.Hdr.Ttl,
+				Type:  "AAAA",
+			}
+		default:
+			return nil
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("fetching zone %s: %w", c.zone, err)
+	}
+	inventory = append(inventory, forwardRecords...)
+
+	if c.ptrConfig != nil && c.ptrConfig.Enabled {
+		if c.ptrConfig.IPv4Zone != "" {
+			ipv4Records, err := c.collectZoneRecords(ctx, c.ptrConfig.IPv4Zone, func(rr dns.RR) *DNSRecord {
+				ptr, ok := rr.(*dns.PTR)
+				if !ok {
+					return nil
+				}
+				return &DNSRecord{
+					Name:  dns.Fqdn(ptr.Hdr.Name),
+					Value: strings.TrimSuffix(ptr.Ptr, "."),
+					TTL:   ptr.Hdr.Ttl,
+					Type:  "PTR",
+				}
+			})
+			if err != nil {
+				return nil, fmt.Errorf("fetching IPv4 PTR zone %s: %w", c.ptrConfig.IPv4Zone, err)
+			}
+			inventory = append(inventory, ipv4Records...)
+		}
+
+		if c.ptrConfig.IPv6Enabled && c.ptrConfig.IPv6Zone != "" {
+			ipv6Records, err := c.collectZoneRecords(ctx, c.ptrConfig.IPv6Zone, func(rr dns.RR) *DNSRecord {
+				ptr, ok := rr.(*dns.PTR)
+				if !ok {
+					return nil
+				}
+				return &DNSRecord{
+					Name:  dns.Fqdn(ptr.Hdr.Name),
+					Value: strings.TrimSuffix(ptr.Ptr, "."),
+					TTL:   ptr.Hdr.Ttl,
+					Type:  "PTR",
+				}
+			})
+			if err != nil {
+				return nil, fmt.Errorf("fetching IPv6 PTR zone %s: %w", c.ptrConfig.IPv6Zone, err)
+			}
+			inventory = append(inventory, ipv6Records...)
+		}
+	}
+
+	return inventory, nil
+}
+
+func (c *Client) collectZoneRecords(ctx context.Context,
+	zone string,
+	normalize func(dns.RR) *DNSRecord) ([]DNSRecord, error) {
+	if zone == "" {
+		return nil, nil
+	}
+
+	rrs, err := c.axfr(ctx, zone)
+	if err != nil {
+		return nil, err
+	}
+
+	var records []DNSRecord
+	for _, rr := range rrs {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		record := normalize(rr)
+		if record == nil {
+			continue
+		}
+		records = append(records, *record)
+	}
+
+	return records, nil
+}
+
+func trimZoneSuffix(name, zone string) string {
+	name = strings.TrimSuffix(name, ".")
+	zoneFqdn := strings.TrimSuffix(dns.Fqdn(zone), ".")
+
+	if name == zoneFqdn {
+		return ""
+	}
+
+	suffix := "." + zoneFqdn
+	return strings.TrimSuffix(name, suffix)
+}
+
+func (c *Client) axfrTransfer(ctx context.Context, zone string) ([]dns.RR, error) {
+	key, err := c.createTSIGKey()
+	if err != nil {
+		return nil, fmt.Errorf("creating TSIG key: %w", err)
+	}
+
+	msg := new(dns.Msg)
+	msg.SetAxfr(dns.Fqdn(zone))
+	msg.SetTsig(key.Hdr.Name, key.Algorithm, tsigDefaultTimeout, time.Now().Unix())
+
+	transfer := &dns.Transfer{
+		DialTimeout: 5 * time.Second,
+		ReadTimeout: 5 * time.Second,
+	}
+	transfer.TsigSecret = map[string]string{key.Hdr.Name: c.keySecret}
+
+	envChan, err := transfer.In(msg, c.serverAddress())
+	if err != nil {
+		return nil, fmt.Errorf("requesting AXFR: %w", err)
+	}
+
+	var records []dns.RR
+	for env := range envChan {
+		if env.Error != nil {
+			return nil, fmt.Errorf("AXFR envelope error: %w", env.Error)
+		}
+		records = append(records, env.RR...)
+	}
+
+	return records, nil
 }
 
 // UpdateRecords updates DNS records for the given machines
 func (c *Client) UpdateRecords(ctx context.Context, records []DNSRecord, dryRun bool) error {
+	c.init()
+
 	if dryRun {
 		klog.Infof("DRY RUN: Would update %d DNS records", len(records))
 		for _, record := range records {
-			if record.Type == "PTR" {
-				klog.V(1).Infof("DRY RUN: Would create/update PTR record %s -> %s (TTL: %d)",
-					record.Name, record.Value, record.TTL)
-			} else {
-				klog.V(1).Infof("DRY RUN: Would create/update A record %s.%s -> %s (TTL: %d)",
-					record.Name, c.zone, record.Value, record.TTL)
+			action := "create/update"
+			if record.Delete {
+				action = "delete"
+			}
+			switch record.Type {
+			case "PTR":
+				klog.V(1).Infof("DRY RUN: Would %s PTR record %s -> %s (TTL: %d)",
+					action, record.Name, record.Value, record.TTL)
+			case "AAAA":
+				klog.V(1).Infof("DRY RUN: Would %s AAAA record %s.%s -> %s (TTL: %d)",
+					action, record.Name, c.zone, record.Value, record.TTL)
+			default:
+				klog.V(1).Infof("DRY RUN: Would %s A record %s.%s -> %s (TTL: %d)",
+					action, record.Name, c.zone, record.Value, record.TTL)
 			}
 		}
 		return nil
@@ -163,7 +350,11 @@ func (c *Client) sendZoneUpdate(ctx context.Context, zone string, records []DNSR
 	for _, record := range records {
 		if record.Type == "PTR" {
 			// Handle PTR records
-			klog.V(1).Infof("Processing PTR record: %s -> %s", record.Name, record.Value)
+			if record.Delete {
+				klog.V(1).Infof("Deleting PTR record: %s", record.Name)
+			} else {
+				klog.V(1).Infof("Processing PTR record: %s -> %s", record.Name, record.Value)
+			}
 
 			// Remove any existing PTR record for this name
 			rrset := &dns.PTR{
@@ -175,6 +366,10 @@ func (c *Client) sendZoneUpdate(ctx context.Context, zone string, records []DNSR
 				},
 			}
 			msg.RemoveRRset([]dns.RR{rrset})
+
+			if record.Delete {
+				continue
+			}
 
 			// Add new PTR record
 			ptrRecord := &dns.PTR{
@@ -189,8 +384,11 @@ func (c *Client) sendZoneUpdate(ctx context.Context, zone string, records []DNSR
 			msg.Insert([]dns.RR{ptrRecord})
 
 		} else {
-			// Handle A/AAAA records (default)
-			klog.V(1).Infof("Processing %s record: %s.%s -> %s", record.Type, record.Name, zone, record.Value)
+			action := "Processing"
+			if record.Delete {
+				action = "Deleting"
+			}
+			klog.V(1).Infof("%s %s record: %s.%s -> %s", action, record.Type, record.Name, zone, record.Value)
 
 			// Remove any existing A/AAAA record for this name
 			var rrset dns.RR
@@ -214,6 +412,10 @@ func (c *Client) sendZoneUpdate(ctx context.Context, zone string, records []DNSR
 				}
 			}
 			msg.RemoveRRset([]dns.RR{rrset})
+
+			if record.Delete {
+				continue
+			}
 
 			// Add new A/AAAA record
 			var newRecord dns.RR

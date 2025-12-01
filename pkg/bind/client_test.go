@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aauren/tailscale-bind-ddns/pkg/config"
+	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -358,6 +359,72 @@ func TestClientFields(t *testing.T) {
 	assert.Equal(t, "test-secret", client.keySecret)
 	assert.Equal(t, "hmac-sha256", client.algorithm)
 	assert.Equal(t, uint32(300), client.ttl)
+}
+
+func TestFetchInventoryForwardAndPTR(t *testing.T) {
+	client := &Client{
+		server:    "dns.example.com",
+		port:      53,
+		zone:      "tail.example.com",
+		keyName:   "test-key",
+		keySecret: "test-secret",
+		algorithm: "hmac-sha256",
+		ptrConfig: &config.PTRConfig{
+			Enabled:     true,
+			IPv4Zone:    "64.100.in-addr.arpa",
+			IPv6Enabled: true,
+			IPv6Zone:    "0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa",
+		},
+	}
+
+	axfrData := map[string][]dns.RR{
+		"tail.example.com": {
+			mustRR(t, "host1.tail.example.com. 300 IN A 100.64.0.1"),
+			mustRR(t, "host2.tail.example.com. 200 IN AAAA fd7a:115c:a1e0::2"),
+			mustRR(t, "tail.example.com. 3600 IN SOA ns tail 1 2 3 4 5"),
+		},
+		"64.100.in-addr.arpa": {
+			mustRR(t, "1.0.64.100.in-addr.arpa. 300 IN PTR host1.tail.example.com."),
+		},
+		"0.e.1.a.1.c.5.1.1.a.7.d.f.ip6.arpa": {
+			mustRR(t, "0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.2.0.0.0.0.0.0.0.0.0.0.0.5.c.1.5. 150 IN PTR host2.tail.example.com."),
+		},
+	}
+
+	client.axfr = func(ctx context.Context, zone string) ([]dns.RR, error) {
+		if records, ok := axfrData[zone]; ok {
+			return records, nil
+		}
+		return nil, fmt.Errorf("unexpected zone %s", zone)
+	}
+
+	inventory, err := client.FetchInventory(context.Background())
+	assert.NoError(t, err)
+	assert.ElementsMatch(t, []DNSRecord{
+		{Name: "host1", Value: "100.64.0.1", TTL: 300, Type: "A"},
+		{Name: "host2", Value: "fd7a:115c:a1e0::2", TTL: 200, Type: "AAAA"},
+		{Name: "1.0.64.100.in-addr.arpa.", Value: "host1.tail.example.com", TTL: 300, Type: "PTR"},
+		{Name: "0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.2.0.0.0.0.0.0.0.0.0.0.0.5.c.1.5.", Value: "host2.tail.example.com", TTL: 150, Type: "PTR"},
+	}, inventory)
+}
+
+func TestFetchInventoryError(t *testing.T) {
+	client := &Client{
+		server:    "dns.example.com",
+		port:      53,
+		zone:      "tail.example.com",
+		keyName:   "test-key",
+		keySecret: "test-secret",
+		algorithm: "hmac-sha256",
+	}
+
+	client.axfr = func(ctx context.Context, zone string) ([]dns.RR, error) {
+		return nil, fmt.Errorf("zone transfer failed")
+	}
+
+	_, err := client.FetchInventory(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "zone transfer failed")
 }
 
 func TestCreatePTRRecord(t *testing.T) {
@@ -767,4 +834,13 @@ func TestExtractIPv6ZoneFromPTRName(t *testing.T) {
 			assert.Equal(t, tt.want, result)
 		})
 	}
+}
+
+func mustRR(t *testing.T, record string) dns.RR {
+	t.Helper()
+	rr, err := dns.NewRR(record)
+	if err != nil {
+		t.Fatalf("failed to parse RR %q: %v", record, err)
+	}
+	return rr
 }

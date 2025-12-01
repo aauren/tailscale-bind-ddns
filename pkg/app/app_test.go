@@ -390,6 +390,72 @@ func TestAppRun(t *testing.T) {
 	assert.NotNil(t, app.recordChan)
 }
 
+func TestPrepareRecordUpdatesHandlesAddsAndDeletes(t *testing.T) {
+	app := &App{}
+	app.currentRecords = recordsToMap([]bind.DNSRecord{
+		{Name: "old", Value: "100.64.0.1", TTL: 300, Type: "A"},
+	})
+	app.desiredRecords = cloneRecordMap(app.currentRecords)
+
+	updates := app.prepareRecordUpdates([]bind.DNSRecord{
+		{Name: "new", Value: "100.64.0.2", TTL: 300, Type: "A"},
+	})
+
+	require.Len(t, updates, 2)
+
+	var addCount, deleteCount int
+	for _, update := range updates {
+		if update.Delete {
+			deleteCount++
+			assert.Equal(t, "old", update.Name)
+		} else {
+			addCount++
+			assert.Equal(t, "new", update.Name)
+			assert.Equal(t, "100.64.0.2", update.Value)
+		}
+	}
+
+	assert.Equal(t, 1, addCount)
+	assert.Equal(t, 1, deleteCount)
+}
+
+func TestPrepareRecordUpdatesNoChanges(t *testing.T) {
+	initial := []bind.DNSRecord{
+		{Name: "machine", Value: "100.64.0.5", TTL: 300, Type: "A"},
+	}
+	app := &App{}
+	app.currentRecords = recordsToMap(initial)
+	app.desiredRecords = cloneRecordMap(app.currentRecords)
+
+	updates := app.prepareRecordUpdates(initial)
+	assert.Nil(t, updates)
+}
+
+func TestPrepareRecordUpdatesRetriesAfterFailure(t *testing.T) {
+	app := &App{}
+	app.currentRecords = recordsToMap([]bind.DNSRecord{
+		{Name: "old", Value: "100.64.0.1", TTL: 300, Type: "A"},
+	})
+	app.desiredRecords = recordsToMap([]bind.DNSRecord{
+		{Name: "new", Value: "100.64.0.2", TTL: 300, Type: "A"},
+	})
+
+	updates := app.prepareRecordUpdates([]bind.DNSRecord{
+		{Name: "new", Value: "100.64.0.2", TTL: 300, Type: "A"},
+	})
+
+	require.Len(t, updates, 2)
+
+	var deleteFound bool
+	for _, update := range updates {
+		if update.Delete && update.Name == "old" {
+			deleteFound = true
+		}
+	}
+
+	assert.True(t, deleteFound, "expected deletion of old record to retry after failure")
+}
+
 func mustMetricsManager(t *testing.T, cfg config.MetricsConfig) *metrics.Manager {
 	manager, err := metrics.NewManager(cfg)
 	require.NoError(t, err)

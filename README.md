@@ -278,6 +278,7 @@ zone "tailscale.example.com" {
     type master;
     file "tailscale.example.com.zone";
     allow-update { key "tailscale-bind-ddns-key"; };
+    allow-transfer { key "tailscale-bind-ddns-key"; }; // Required for inventory sync
 };
 
 // OPTIONAL: if you are enabling reverse DNS functionality (note this would only cover addresses
@@ -287,8 +288,13 @@ zone "64.100.in-addr.arpa" {
     type master;
     file "/etc/bind/zones/64.100.in-addr.arpa.zone";
     allow-update { key "tailscale-bind-ddns-key"; };
+    allow-transfer { key "tailscale-bind-ddns-key"; };
 };
 ```
+
+The AXFR permission (`allow-transfer`) is necessary because the application performs an authenticated zone transfer at startup
+to learn about any records that were added while it was offline. Apply similar access rules to every zone the application
+manages so stale entries can be cleaned up automatically.
 
 3. **Create Zone File** (`/var/lib/bind/tailscale.example.com.zone`):
 
