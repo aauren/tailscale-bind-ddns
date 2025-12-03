@@ -77,6 +77,18 @@ func TestObserveBindUpdate(t *testing.T) {
 	assert.Equal(t, 1.0, testutil.ToFloat64(manager.updateFailureCounter))
 }
 
+func TestObserveInventoryRefresh(t *testing.T) {
+	manager := mustManager(t, config.MetricsConfig{Enabled: true})
+
+	manager.ObserveInventoryRefresh(150*time.Millisecond, nil)
+	assert.Equal(t, 1.0, testutil.ToFloat64(manager.inventoryRunCounter))
+	assert.Equal(t, 0.0, testutil.ToFloat64(manager.inventoryFailureCounter))
+
+	manager.ObserveInventoryRefresh(0, errors.New("axfr failed"))
+	assert.Equal(t, 2.0, testutil.ToFloat64(manager.inventoryRunCounter))
+	assert.Equal(t, 1.0, testutil.ToFloat64(manager.inventoryFailureCounter))
+}
+
 func TestPerEndpointMetrics(t *testing.T) {
 	manager := mustManager(t, config.MetricsConfig{
 		Enabled:           true,

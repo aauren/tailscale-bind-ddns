@@ -35,14 +35,14 @@ type TailscaleConfig struct {
 
 // BindConfig holds Bind DNS server configuration
 type BindConfig struct {
-	Server         string        `mapstructure:"server"`
-	Port           int           `mapstructure:"port"`
-	Zone           string        `mapstructure:"zone"`
-	KeyName        string        `mapstructure:"key_name"`
-	KeySecret      string        `mapstructure:"key_secret"`
-	Algorithm      string        `mapstructure:"algorithm"`
-	TTL            time.Duration `mapstructure:"ttl"`
-	UpdateInterval time.Duration `mapstructure:"update_interval"`
+	Server                   string        `mapstructure:"server"`
+	Port                     int           `mapstructure:"port"`
+	Zone                     string        `mapstructure:"zone"`
+	KeyName                  string        `mapstructure:"key_name"`
+	KeySecret                string        `mapstructure:"key_secret"`
+	Algorithm                string        `mapstructure:"algorithm"`
+	TTL                      time.Duration `mapstructure:"ttl"`
+	UpdateInterval           time.Duration `mapstructure:"update_interval"`
 	InventoryRefreshInterval time.Duration `mapstructure:"inventory_refresh_interval"`
 
 	// PTR record configuration

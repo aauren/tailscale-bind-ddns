@@ -69,6 +69,10 @@ type Manager struct {
 	perEndpointAuthorizedGauge *prometheus.GaugeVec
 	perEndpointConnectedGauge  *prometheus.GaugeVec
 
+	inventoryDurationHistogram prometheus.Histogram
+	inventoryRunCounter        prometheus.Counter
+	inventoryFailureCounter    prometheus.Counter
+
 	mu              sync.Mutex
 	server          *http.Server
 	machineSnapshot map[string]machineState
@@ -206,6 +210,19 @@ func (m *Manager) initializeCollectors() {
 		Name: "tailscale_bind_last_successful_update_timestamp_seconds",
 		Help: "Unix timestamp of the last successful Bind update.",
 	})
+	m.inventoryDurationHistogram = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "tailscale_bind_inventory_refresh_duration_seconds",
+		Help:    "Histogram of durations for inventory refresh operations.",
+		Buckets: prometheus.DefBuckets,
+	})
+	m.inventoryRunCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tailscale_bind_inventory_refresh_total",
+		Help: "Total number of inventory refresh attempts.",
+	})
+	m.inventoryFailureCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tailscale_bind_inventory_refresh_failures_total",
+		Help: "Total number of failed inventory refresh attempts.",
+	})
 
 	if m.perMachine {
 		m.perEndpointAuthorizedGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -238,6 +255,9 @@ func (m *Manager) initializeCollectors() {
 		m.recordRemovedCounter,
 		m.recordQueueDepthGauge,
 		m.lastUpdateGauge,
+		m.inventoryDurationHistogram,
+		m.inventoryRunCounter,
+		m.inventoryFailureCounter,
 	}
 
 	for _, collector := range collectorList {
@@ -386,6 +406,22 @@ func (m *Manager) ObserveBindUpdate(records []RecordInfo, duration time.Duration
 	m.lastUpdateGauge.Set(float64(time.Now().Unix()))
 
 	m.updateRecordSnapshotsLocked(records)
+}
+
+// ObserveInventoryRefresh records stats for a DNS inventory refresh.
+func (m *Manager) ObserveInventoryRefresh(duration time.Duration, err error) {
+	if !m.enabled {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.inventoryRunCounter.Inc()
+	m.inventoryDurationHistogram.Observe(duration.Seconds())
+	if err != nil {
+		m.inventoryFailureCounter.Inc()
+	}
 }
 
 func (m *Manager) updateMachineSnapshotsLocked(machines []MachineInfo) {
