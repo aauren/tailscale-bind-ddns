@@ -30,6 +30,7 @@ The application supports three configuration methods (in order of precedence):
 | Algorithm | `--bind-algorithm` | `TSBD_BIND_ALGORITHM` | TSIG algorithm (default: hmac-sha256) |
 | TTL | `--bind-ttl` | `TSBD_BIND_TTL` | DNS record TTL (default: 300s) |
 | Update Interval | `--bind-update-interval` | `TSBD_BIND_UPDATE_INTERVAL` | DNS update interval (default: 60s) |
+| Inventory Refresh Interval | `--bind-inventory-refresh-interval` | `TSBD_BIND_INVENTORY_REFRESH_INTERVAL` | How often to re-read DNS inventory via AXFR (default: 30m, 0 disables) |
 
 ### PTR Record Configuration
 
@@ -79,6 +80,7 @@ bind:
   algorithm: "hmac-sha256"
   ttl: "300s"
   update_interval: "60s"
+  inventory_refresh_interval: "30m"
 
   # PTR record configuration (optional)
   ptr:

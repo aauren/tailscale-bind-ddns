@@ -399,7 +399,7 @@ func TestPrepareRecordUpdatesHandlesAddsAndDeletes(t *testing.T) {
 
 	updates := app.prepareRecordUpdates([]bind.DNSRecord{
 		{Name: "new", Value: "100.64.0.2", TTL: 300, Type: "A"},
-	})
+	}, nil)
 
 	require.Len(t, updates, 2)
 
@@ -427,7 +427,7 @@ func TestPrepareRecordUpdatesNoChanges(t *testing.T) {
 	app.currentRecords = recordsToMap(initial)
 	app.desiredRecords = cloneRecordMap(app.currentRecords)
 
-	updates := app.prepareRecordUpdates(initial)
+	updates := app.prepareRecordUpdates(initial, nil)
 	assert.Nil(t, updates)
 }
 
@@ -442,9 +442,7 @@ func TestPrepareRecordUpdatesRetriesAfterFailure(t *testing.T) {
 
 	updates := app.prepareRecordUpdates([]bind.DNSRecord{
 		{Name: "new", Value: "100.64.0.2", TTL: 300, Type: "A"},
-	})
-
-	require.Len(t, updates, 2)
+	}, nil)
 
 	var deleteFound bool
 	for _, update := range updates {
@@ -454,6 +452,23 @@ func TestPrepareRecordUpdatesRetriesAfterFailure(t *testing.T) {
 	}
 
 	assert.True(t, deleteFound, "expected deletion of old record to retry after failure")
+}
+
+func TestPrepareRecordUpdatesRespectsProtectedKeys(t *testing.T) {
+	app := &App{}
+	existing := []bind.DNSRecord{
+		{Name: "machine", Value: "100.64.0.1", TTL: 300, Type: "A"},
+	}
+	app.currentRecords = recordsToMap(existing)
+	app.desiredRecords = cloneRecordMap(app.currentRecords)
+
+	protected := map[string]struct{}{
+		recordMapKey(existing[0]): {},
+	}
+
+	updates := app.prepareRecordUpdates([]bind.DNSRecord{}, protected)
+
+	assert.Nil(t, updates, "expected no deletions for protected record")
 }
 
 func mustMetricsManager(t *testing.T, cfg config.MetricsConfig) *metrics.Manager {

@@ -41,6 +41,9 @@ bind:
   # How often to send DNS updates
   update_interval: "60s"
 
+  # How often to refresh DNS inventory from Bind (set to 0 to disable)
+  inventory_refresh_interval: "30m"
+
   # PTR record (Reverse DNS) configuration (optional)
   ptr:
     # Enable PTR record creation

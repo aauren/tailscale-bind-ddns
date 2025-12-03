@@ -43,6 +43,7 @@ type BindConfig struct {
 	Algorithm      string        `mapstructure:"algorithm"`
 	TTL            time.Duration `mapstructure:"ttl"`
 	UpdateInterval time.Duration `mapstructure:"update_interval"`
+	InventoryRefreshInterval time.Duration `mapstructure:"inventory_refresh_interval"`
 
 	// PTR record configuration
 	PTR PTRConfig `mapstructure:"ptr"`
@@ -119,6 +120,7 @@ func setDefaults() {
 	viper.SetDefault("bind.algorithm", "hmac-sha256")
 	viper.SetDefault("bind.ttl", "300s")
 	viper.SetDefault("bind.update_interval", "60s")
+	viper.SetDefault("bind.inventory_refresh_interval", "30m")
 	viper.SetDefault("general.log_level", "info")
 	viper.SetDefault("general.dry_run", false)
 	viper.SetDefault("metrics.enabled", false)
@@ -176,6 +178,9 @@ func bindEnvVars() {
 	}
 	if err := viper.BindEnv("bind.update_interval", "TSBD_BIND_UPDATE_INTERVAL"); err != nil {
 		klog.Errorf("Failed to bind TSBD_BIND_UPDATE_INTERVAL: %v", err)
+	}
+	if err := viper.BindEnv("bind.inventory_refresh_interval", "TSBD_BIND_INVENTORY_REFRESH_INTERVAL"); err != nil {
+		klog.Errorf("Failed to bind TSBD_BIND_INVENTORY_REFRESH_INTERVAL: %v", err)
 	}
 
 	// PTR configuration
