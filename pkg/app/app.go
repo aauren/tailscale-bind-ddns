@@ -27,6 +27,7 @@ type App struct {
 	stateMu         sync.Mutex
 	currentRecords  map[string]bind.DNSRecord
 	desiredRecords  map[string]bind.DNSRecord
+	protectedRecords map[string]struct{}
 }
 
 // NewApp creates a new application instance
@@ -103,6 +104,15 @@ func (a *App) Run(ctx context.Context) error {
 		a.startUpdating(ctx)
 	}()
 
+	// Periodic inventory refresh
+	if a.config.Bind.InventoryRefreshInterval > 0 {
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			a.inventoryRefreshLoop(ctx)
+		}()
+	}
+
 	// Wait for context cancellation
 	<-ctx.Done()
 	klog.Info("Shutting down application...")
@@ -135,7 +145,9 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 
 			//nolint:gocritic // we understand that we're appending to a new array here
 			allRecords := append(records, ptrRecords...)
-			updates := a.prepareRecordUpdates(allRecords)
+				protected := a.computeProtectedRecordKeys(machines)
+				a.setProtectedKeys(protected)
+			updates := a.prepareRecordUpdates(allRecords, protected)
 			if len(updates) == 0 {
 				continue
 			}
@@ -216,6 +228,56 @@ func (a *App) startUpdating(ctx context.Context) {
 				return
 			}
 		}
+	}
+}
+
+func (a *App) inventoryRefreshLoop(ctx context.Context) {
+	interval := a.config.Bind.InventoryRefreshInterval
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	klog.Infof("Starting inventory refresh loop with interval %v", interval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			klog.Info("Inventory refresh loop stopped")
+			return
+		case <-ticker.C:
+			a.refreshInventory(ctx)
+		}
+	}
+}
+
+func (a *App) refreshInventory(ctx context.Context) {
+	klog.V(1).Info("Refreshing DNS inventory from Bind")
+	records, err := a.bindClient.FetchInventory(ctx)
+	if err != nil {
+		klog.Errorf("Inventory refresh failed: %v", err)
+		return
+	}
+
+	a.stateMu.Lock()
+	a.currentRecords = recordsToMap(records)
+	protected := cloneProtectedKeys(a.protectedRecords)
+	desired := recordsFromMap(a.desiredRecords)
+	a.stateMu.Unlock()
+
+	if len(desired) == 0 {
+		return
+	}
+
+	updates := a.prepareRecordUpdates(desired, protected)
+	if len(updates) == 0 {
+		return
+	}
+
+	select {
+	case a.recordChan <- updates:
+		if a.metricsManager != nil {
+			a.metricsManager.ObserveRecordQueue(len(a.recordChan))
+		}
+	case <-ctx.Done():
 	}
 }
 
@@ -427,7 +489,7 @@ func (a *App) loadExistingDNSRecords(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) prepareRecordUpdates(records []bind.DNSRecord) []bind.DNSRecord {
+func (a *App) prepareRecordUpdates(records []bind.DNSRecord, protected map[string]struct{}) []bind.DNSRecord {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
 
@@ -445,6 +507,11 @@ func (a *App) prepareRecordUpdates(records []bind.DNSRecord) []bind.DNSRecord {
 
 	for key, current := range a.currentRecords {
 		if _, ok := desired[key]; !ok {
+			if protected != nil {
+				if _, keep := protected[key]; keep {
+					continue
+				}
+			}
 			toDelete := current
 			toDelete.Delete = true
 			updates = append(updates, toDelete)
@@ -463,6 +530,55 @@ func (a *App) markStateApplied() {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
 	a.currentRecords = cloneRecordMap(a.desiredRecords)
+}
+
+func (a *App) setProtectedKeys(keys map[string]struct{}) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	a.protectedRecords = keys
+}
+
+func (a *App) computeProtectedRecordKeys(machines []tailscale.Machine) map[string]struct{} {
+	protected := make(map[string]struct{})
+
+	for _, machine := range machines {
+		recordName := machine.Name
+		if recordName == "" {
+			recordName = machine.ID
+		}
+		recordName = sanitizeDNSName(recordName)
+
+		if machine.IPv4Address != "" {
+			key := recordMapKey(bind.DNSRecord{Name: recordName, Type: "A"})
+			protected[key] = struct{}{}
+		}
+		if machine.IPv6Address != "" {
+			key := recordMapKey(bind.DNSRecord{Name: recordName, Type: "AAAA"})
+			protected[key] = struct{}{}
+		}
+
+		if !a.config.Bind.PTR.Enabled {
+			continue
+		}
+
+		fqdn := recordName + "." + a.config.Bind.Zone
+
+		if machine.IPv4Address != "" {
+			ptrRecord, err := a.bindClient.CreatePTRRecord(machine.IPv4Address, fqdn)
+			if err == nil && ptrRecord != nil {
+				protected[recordMapKey(*ptrRecord)] = struct{}{}
+			}
+		}
+
+		if machine.IPv6Address != "" {
+			ptrRecord, err := a.bindClient.CreatePTRRecord(machine.IPv6Address, fqdn)
+			if err == nil && ptrRecord != nil {
+				protected[recordMapKey(*ptrRecord)] = struct{}{}
+			}
+		}
+	}
+
+	return protected
 }
 
 func recordsToMap(records []bind.DNSRecord) map[string]bind.DNSRecord {
@@ -510,6 +626,30 @@ func mapsEqual(a, b map[string]bind.DNSRecord) bool {
 
 func recordMapKey(record bind.DNSRecord) string {
 	return fmt.Sprintf("%s|%s", record.Type, record.Name)
+}
+
+func cloneProtectedKeys(src map[string]struct{}) map[string]struct{} {
+	if len(src) == 0 {
+		return nil
+	}
+	cloned := make(map[string]struct{}, len(src))
+	for key := range src {
+		cloned[key] = struct{}{}
+	}
+	return cloned
+}
+
+func recordsFromMap(recordMap map[string]bind.DNSRecord) []bind.DNSRecord {
+	if len(recordMap) == 0 {
+		return nil
+	}
+
+	records := make([]bind.DNSRecord, 0, len(recordMap))
+	for _, record := range recordMap {
+		record.Delete = false
+		records = append(records, record)
+	}
+	return records
 }
 
 // sanitizeDNSName sanitizes a string to be a valid DNS record name
