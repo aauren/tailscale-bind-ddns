@@ -17,16 +17,16 @@ import (
 
 // App represents the main application
 type App struct {
-	config          *config.Config
-	tailscaleClient *tailscale.Client
-	bindClient      *bind.Client
-	machineChan     chan []tailscale.Machine
-	recordChan      chan []bind.DNSRecord
-	metricsManager  *metrics.Manager
-	wg              sync.WaitGroup
-	stateMu         sync.Mutex
-	currentRecords  map[string]bind.DNSRecord
-	desiredRecords  map[string]bind.DNSRecord
+	config           *config.Config
+	tailscaleClient  *tailscale.Client
+	bindClient       *bind.Client
+	machineChan      chan []tailscale.Machine
+	recordChan       chan []bind.DNSRecord
+	metricsManager   *metrics.Manager
+	wg               sync.WaitGroup
+	stateMu          sync.Mutex
+	currentRecords   map[string]bind.DNSRecord
+	desiredRecords   map[string]bind.DNSRecord
 	protectedRecords map[string]struct{}
 }
 
@@ -145,8 +145,8 @@ func (a *App) convertMachinesToRecords(ctx context.Context) {
 
 			//nolint:gocritic // we understand that we're appending to a new array here
 			allRecords := append(records, ptrRecords...)
-				protected := a.computeProtectedRecordKeys(machines)
-				a.setProtectedKeys(protected)
+			protected := a.computeProtectedRecordKeys(machines)
+			a.setProtectedKeys(protected)
 			updates := a.prepareRecordUpdates(allRecords, protected)
 			if len(updates) == 0 {
 				continue
@@ -251,8 +251,18 @@ func (a *App) inventoryRefreshLoop(ctx context.Context) {
 
 func (a *App) refreshInventory(ctx context.Context) {
 	klog.V(1).Info("Refreshing DNS inventory from Bind")
+
+	start := time.Now()
+	var refreshErr error
+	defer func() {
+		if a.metricsManager != nil {
+			a.metricsManager.ObserveInventoryRefresh(time.Since(start), refreshErr)
+		}
+	}()
+
 	records, err := a.bindClient.FetchInventory(ctx)
 	if err != nil {
+		refreshErr = err
 		klog.Errorf("Inventory refresh failed: %v", err)
 		return
 	}
@@ -473,7 +483,14 @@ func (a *App) GetStatus() map[string]interface{} {
 	}
 }
 
-func (a *App) loadExistingDNSRecords(ctx context.Context) error {
+func (a *App) loadExistingDNSRecords(ctx context.Context) (err error) {
+	start := time.Now()
+	defer func() {
+		if a.metricsManager != nil {
+			a.metricsManager.ObserveInventoryRefresh(time.Since(start), err)
+		}
+	}()
+
 	records, err := a.bindClient.FetchInventory(ctx)
 	if err != nil {
 		return err
