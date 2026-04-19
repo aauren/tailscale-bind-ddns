@@ -81,29 +81,32 @@ func NewOAuthClient(clientID, clientSecret, tailnet string) (*Client, error) {
 func (c *Client) GetMachines(ctx context.Context) ([]Machine, error) {
 	klog.V(2).Info("Fetching machines from Tailscale")
 
-	devices, err := c.client.Devices().ListWithAllFields(ctx)
+	devices, err := c.client.Devices().List(ctx,
+		tailscaleclient.WithFields(tailscaleclient.IncludeFieldsAll),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching devices: %w", err)
 	}
 
 	var machines []Machine
 	for _, device := range devices {
+		var lastSeen time.Time
+		if device.LastSeen != nil {
+			lastSeen = device.LastSeen.Time
+		}
+
 		machine := Machine{
 			ID:         device.ID,
 			Name:       device.Name,
-			LastSeen:   device.LastSeen.Time,
+			LastSeen:   lastSeen,
 			Authorized: device.Authorized,
 		}
 
-		if device.ClientConnectivity != nil {
-			lastSeen := device.LastSeen.Time
-			fresh := !lastSeen.IsZero()
-			if fresh {
-				// Only treat connectivity as active if the device checked in recently.
-				if time.Since(lastSeen) <= connectivityStaleThreshold {
-					if len(device.ClientConnectivity.Endpoints) > 0 || device.ClientConnectivity.DERP != "" {
-						machine.Online = true
-					}
+		if device.ClientConnectivity != nil && !lastSeen.IsZero() {
+			// Only treat connectivity as active if the device checked in recently.
+			if time.Since(lastSeen) <= connectivityStaleThreshold {
+				if len(device.ClientConnectivity.Endpoints) > 0 || device.ClientConnectivity.DERP != "" {
+					machine.Online = true
 				}
 			}
 		}
