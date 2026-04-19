@@ -320,7 +320,7 @@ func (m *Manager) RunServer(ctx context.Context) {
 	}
 	m.server = server
 
-	go func() {
+	go func() { //nolint:gosec // G118: parent ctx is done; new context is intentional.
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
