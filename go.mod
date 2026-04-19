@@ -1,6 +1,6 @@
 module github.com/aauren/tailscale-bind-ddns
 
-go 1.25.4
+go 1.26.2
 
 require (
 	github.com/miekg/dns v1.1.68

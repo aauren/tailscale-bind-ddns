@@ -20,9 +20,9 @@ permissions:
   contents: write
 
 env:
-  BUILDTIME_BASE: "golang:1.25.4"
+  BUILDTIME_BASE: "golang:1.26.2"
   RUNTIME_BASE: "gcr.io/distroless/static"
-  GO_VERSION: "~1.25.4"
+  GO_VERSION: "~1.26.2"
   GO_CACHE: "/home/runner/.cache/go-build"
   GO_MOD_CACHE: "/home/runner/go/pkg/mod"
 
