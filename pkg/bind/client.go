@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -792,9 +793,9 @@ func ipv6ToReverseDNS(ipStr string) string {
 
 	// Convert each byte to two nibbles and reverse the order
 	var nibbles []string
-	for i := len(ipv6) - 1; i >= 0; i-- {
-		nibbles = append(nibbles, fmt.Sprintf("%x", ipv6[i]&IPv6NibbleMaskLow))
-		nibbles = append(nibbles, fmt.Sprintf("%x", (ipv6[i]&IPv6NibbleMaskHigh)>>IPv6NibbleShift))
+	for _, i := range slices.Backward(ipv6) {
+		nibbles = append(nibbles, fmt.Sprintf("%x", i&IPv6NibbleMaskLow))
+		nibbles = append(nibbles, fmt.Sprintf("%x", (i&IPv6NibbleMaskHigh)>>IPv6NibbleShift))
 	}
 
 	return strings.Join(nibbles, ".") + ".ip6.arpa."

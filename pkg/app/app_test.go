@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -271,8 +270,7 @@ func TestConvertMachinesToRecordsUpdatesQueueMetric(t *testing.T) {
 		metricsManager: metricsManager,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go app.convertMachinesToRecords(ctx)
 

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"sync"
@@ -84,33 +85,25 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	// Start the machine-to-record converter
-	a.wg.Add(1)
-	go func() {
-		defer a.wg.Done()
+	a.wg.Go(func() {
 		a.convertMachinesToRecords(ctx)
-	}()
+	})
 
 	// Start Tailscale polling
-	a.wg.Add(1)
-	go func() {
-		defer a.wg.Done()
+	a.wg.Go(func() {
 		a.pollTailscale(ctx)
-	}()
+	})
 
 	// Start Bind DDNS updating
-	a.wg.Add(1)
-	go func() {
-		defer a.wg.Done()
+	a.wg.Go(func() {
 		a.startUpdating(ctx)
-	}()
+	})
 
 	// Periodic inventory refresh
 	if a.config.Bind.InventoryRefreshInterval > 0 {
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
+		a.wg.Go(func() {
 			a.inventoryRefreshLoop(ctx)
-		}()
+		})
 	}
 
 	// Wait for context cancellation
@@ -473,8 +466,8 @@ func (a *App) createPTRRecords(machines []tailscale.Machine) []bind.DNSRecord {
 }
 
 // GetStatus returns the current status of the application
-func (a *App) GetStatus() map[string]interface{} {
-	return map[string]interface{}{
+func (a *App) GetStatus() map[string]any {
+	return map[string]any{
 		"tailscale_tailnet": a.config.Tailscale.Tailnet,
 		"bind_server":       a.config.Bind.Server,
 		"bind_zone":         a.config.Bind.Zone,
@@ -617,9 +610,7 @@ func cloneRecordMap(src map[string]bind.DNSRecord) map[string]bind.DNSRecord {
 	}
 
 	clone := make(map[string]bind.DNSRecord, len(src))
-	for key, record := range src {
-		clone[key] = record
-	}
+	maps.Copy(clone, src)
 	return clone
 }
 
