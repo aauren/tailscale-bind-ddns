@@ -1,5 +1,8 @@
+ARG BUILDTIME_BASE=golang:1.27.1-alpine
+ARG RUNTIME_BASE=gcr.io/distroless/static-debian12
+
 # Build stage
-FROM golang:1.26.2-alpine AS builder
+FROM ${BUILDTIME_BASE} AS builder
 
 # Install git and ca-certificates for fetching dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -19,7 +22,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o tailscale-bind-ddns .
 
 # Final stage - distroless image
-FROM gcr.io/distroless/static-debian12
+FROM ${RUNTIME_BASE}
 
 # Add labels for container metadata
 LABEL org.opencontainers.image.title="tailscale-bind-ddns"

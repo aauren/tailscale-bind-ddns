@@ -7,6 +7,8 @@ COMMIT?=$(shell git rev-parse --short HEAD)
 DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 DOCKER_IMAGE=aauren/tailscale-bind-ddns
 GO_VERSION=1.27.1
+BUILDTIME_BASE=golang:$(GO_VERSION)-alpine
+RUNTIME_BASE=gcr.io/distroless/static-debian12
 BUILD_IN_DOCKER?=true
 IS_ROOT?=$(shell id -u)
 OSX?=$(shell uname -s | grep -i darwin)
@@ -107,6 +109,8 @@ lint-fix:
 # Build Docker image
 docker-build:
 	docker build -t $(DOCKER_IMAGE):$(VERSION) -t $(DOCKER_IMAGE):latest \
+		--build-arg BUILDTIME_BASE=$(BUILDTIME_BASE) \
+		--build-arg RUNTIME_BASE=$(RUNTIME_BASE) \
 		--label "org.opencontainers.image.version=$(VERSION)" \
 		--label "org.opencontainers.image.created=$(DATE)" \
 		--label "org.opencontainers.image.revision=$(COMMIT)" \

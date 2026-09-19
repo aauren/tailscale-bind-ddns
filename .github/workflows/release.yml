@@ -20,8 +20,8 @@ permissions:
   contents: write
 
 env:
-  BUILDTIME_BASE: "golang:1.27.1"
-  RUNTIME_BASE: "gcr.io/distroless/static"
+  BUILDTIME_BASE: "golang:1.27.1-alpine"
+  RUNTIME_BASE: "gcr.io/distroless/static-debian12"
   GO_VERSION: "~1.27.1"
   GO_CACHE: "/home/runner/.cache/go-build"
   GO_MOD_CACHE: "/home/runner/go/pkg/mod"
