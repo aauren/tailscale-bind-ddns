@@ -1,5 +1,5 @@
-ARG BUILDTIME_BASE=golang:1.27.1-alpine
-ARG RUNTIME_BASE=gcr.io/distroless/static-debian12
+ARG BUILDTIME_BASE=golang:1.27.3-alpine
+ARG RUNTIME_BASE=gcr.io/distroless/static-debian13
 
 # Build stage
 FROM ${BUILDTIME_BASE} AS builder
